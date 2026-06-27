@@ -1,10 +1,14 @@
 #include "AbilityTasks/SGM_PlayMoverMontageFromAbilityTask.h"
 
 #include "Abilities/GameplayAbility.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/SGM_MontageComponent.h"
 
-USGM_PlayMoverMontageFromAbilityTask* USGM_PlayMoverMontageFromAbilityTask::PlaySGMMoverMontageFromAbility(
+USGM_PlayMoverMontageFromAbilityTask* USGM_PlayMoverMontageFromAbilityTask::PlaySGMMoverMontageAndWait(
 	UGameplayAbility* OwningAbility,
+	FName TaskInstanceName,
 	UAnimMontage* Montage,
 	float PlayRate,
 	float StartTimeSeconds,
@@ -12,7 +16,9 @@ USGM_PlayMoverMontageFromAbilityTask* USGM_PlayMoverMontageFromAbilityTask::Play
 	bool bEnableRootMotionContactBlocking,
 	float RootMotionReleasePercent)
 {
-	USGM_PlayMoverMontageFromAbilityTask* Task = NewAbilityTask<USGM_PlayMoverMontageFromAbilityTask>(OwningAbility);
+	USGM_PlayMoverMontageFromAbilityTask* Task =
+		NewAbilityTask<USGM_PlayMoverMontageFromAbilityTask>(OwningAbility, TaskInstanceName);
+
 	Task->MontageToPlay = Montage;
 	Task->PlayRateToUse = PlayRate;
 	Task->StartTimeSecondsToUse = StartTimeSeconds;
@@ -24,11 +30,12 @@ USGM_PlayMoverMontageFromAbilityTask* USGM_PlayMoverMontageFromAbilityTask::Play
 
 void USGM_PlayMoverMontageFromAbilityTask::Activate()
 {
-	USGM_MontageComponent* MontageComponent = FindMontageComponent();
+	Super::Activate();
+
+	MontageComponent = FindMontageComponent();
 	if (!MontageComponent || !MontageToPlay)
 	{
-		OnFailed.Broadcast();
-		EndTask();
+		BroadcastCancelledAndEnd();
 		return;
 	}
 
@@ -40,8 +47,7 @@ void USGM_PlayMoverMontageFromAbilityTask::Activate()
 
 	if (!bStarted)
 	{
-		OnFailed.Broadcast();
-		EndTask();
+		BroadcastCancelledAndEnd();
 		return;
 	}
 
@@ -56,7 +62,105 @@ void USGM_PlayMoverMontageFromAbilityTask::Activate()
 		MontageComponent->ClearRootMotionRelease();
 	}
 
-	OnStarted.Broadcast();
+	MeshComponent = MontageComponent->GetResolvedMontageMeshComponent();
+	AnimInstance = MeshComponent ? MeshComponent->GetAnimInstance() : nullptr;
+	if (!AnimInstance)
+	{
+		BroadcastCancelledAndEnd();
+		return;
+	}
+
+	FOnMontageBlendingOutStarted BlendOutDelegate;
+	BlendOutDelegate.BindUObject(this, &USGM_PlayMoverMontageFromAbilityTask::OnMontageBlendingOut);
+	AnimInstance->Montage_SetBlendingOutDelegate(BlendOutDelegate, MontageToPlay);
+
+	FOnMontageEnded EndDelegate;
+	EndDelegate.BindUObject(this, &USGM_PlayMoverMontageFromAbilityTask::OnMontageEnded);
+	AnimInstance->Montage_SetEndDelegate(EndDelegate, MontageToPlay);
+
+	bPlayedSuccessfully = true;
+}
+
+void USGM_PlayMoverMontageFromAbilityTask::ExternalCancel()
+{
+	StopPlayingMontage();
+
+	if (ShouldBroadcastAbilityTaskDelegates())
+	{
+		OnCancelled.Broadcast();
+	}
+
+	Super::ExternalCancel();
+}
+
+void USGM_PlayMoverMontageFromAbilityTask::OnDestroy(bool bInOwnerFinished)
+{
+	ClearMontageDelegates();
+	Super::OnDestroy(bInOwnerFinished);
+}
+
+void USGM_PlayMoverMontageFromAbilityTask::OnMontageBlendingOut(UAnimMontage* InMontage, bool bInterrupted)
+{
+	if (InMontage != MontageToPlay || !ShouldBroadcastAbilityTaskDelegates())
+	{
+		return;
+	}
+
+	if (bInterrupted)
+	{
+		OnInterrupted.Broadcast();
+		return;
+	}
+
+	OnBlendOut.Broadcast();
+}
+
+void USGM_PlayMoverMontageFromAbilityTask::OnMontageEnded(UAnimMontage* InMontage, bool bInterrupted)
+{
+	if (InMontage != MontageToPlay)
+	{
+		return;
+	}
+
+	if (ShouldBroadcastAbilityTaskDelegates() && !bInterrupted)
+	{
+		OnCompleted.Broadcast();
+	}
+
+	EndTask();
+}
+
+bool USGM_PlayMoverMontageFromAbilityTask::StopPlayingMontage()
+{
+	if (!MontageComponent || !MontageToPlay)
+	{
+		return false;
+	}
+
+	return MontageComponent->StopMontageLocal(MontageToPlay);
+}
+
+void USGM_PlayMoverMontageFromAbilityTask::ClearMontageDelegates()
+{
+	if (!AnimInstance || !MontageToPlay)
+	{
+		return;
+	}
+
+	FOnMontageBlendingOutStarted EmptyBlendOutDelegate;
+	AnimInstance->Montage_SetBlendingOutDelegate(EmptyBlendOutDelegate, MontageToPlay);
+
+	FOnMontageEnded EmptyEndDelegate;
+	AnimInstance->Montage_SetEndDelegate(EmptyEndDelegate, MontageToPlay);
+}
+
+void USGM_PlayMoverMontageFromAbilityTask::BroadcastCancelledAndEnd()
+{
+	if (ShouldBroadcastAbilityTaskDelegates())
+	{
+		OnCancelled.Broadcast();
+	}
+
 	EndTask();
 }
 
