@@ -1,5 +1,6 @@
-﻿#include "ProxyMoverPrediction/Public/Pawn/PMP_MoverPawn.h"
+#include "ProxyMoverPrediction/Public/Pawn/PMP_MoverPawn.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SGM_MontageComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "DefaultMovementSet/Settings/CommonLegacyMovementSettings.h"
 #include "GameFramework/PlayerController.h"
@@ -93,6 +94,20 @@ void APMP_MoverPawn::ProduceInput_Implementation(int32 SimTimeMs, FMoverInputCmd
 
 void APMP_MoverPawn::RequestMoveIntent(const FVector& MoveIntent)
 {
+	if (USGM_MontageComponent* MontageComponent = FindComponentByClass<USGM_MontageComponent>())
+	{
+		if (MontageComponent->ShouldBlockMovementInputDuringRootMotion())
+		{
+			CachedMoveInputIntent = FVector::ZeroVector;
+			return;
+		}
+
+		if (!MoveIntent.IsNearlyZero())
+		{
+			MontageComponent->TryReleaseRootMotionForMovementInput();
+		}
+	}
+
 	// Store the latest input direction. We do not move here.
 	// Movement happens only when Mover asks for input during simulation.
 	CachedMoveInputIntent = MoveIntent;
@@ -128,4 +143,3 @@ void APMP_MoverPawn::ApplyDefaultMovementSettings()
 	MovementSettings->TurningRate = 720.0f;
 	MovementSettings->TurningBoost = 2.0f;
 }
-
