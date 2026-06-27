@@ -1,10 +1,11 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
 #include "PMP_MoverAnimInstance.generated.h"
 
 class UCharacterMoverComponent;
+class USGM_MontageComponent;
 
 UCLASS()
 class PROXYMOVERPREDICTION_API UPMP_MoverAnimInstance : public UAnimInstance
@@ -38,6 +39,10 @@ protected:
 	
 	UPROPERTY(BlueprintReadOnly, Category="Anim|Movement", meta=(AllowPrivateAccess="true"))
 	bool bIsOnGround = false;
+
+	// True when root motion has been released and the AnimBP should layer upper/lower body.
+	UPROPERTY(BlueprintReadOnly, Category = "Anim|Root Motion", meta=(AllowPrivateAccess="true"))
+	bool bCanBlendUpperAndLowerBody = false;
 	
 	// The pawn that owns this anim instance.
 	UPROPERTY(BlueprintReadOnly, Category = "Anim|Owner")
@@ -46,4 +51,8 @@ protected:
 	// Mover component we read velocity from.
 	UPROPERTY(BlueprintReadOnly, Category = "Anim|Movement")
 	TObjectPtr<UCharacterMoverComponent> MoverComponent = nullptr;
+
+	// Montage component we read root-motion animation state from.
+	UPROPERTY(BlueprintReadOnly, Category = "Anim|Root Motion")
+	TObjectPtr<USGM_MontageComponent> MontageComponent = nullptr;
 };
