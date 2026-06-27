@@ -4,11 +4,18 @@
 #include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/OverlapResult.h"
 #include "GameFramework/Pawn.h"
 #include "LayeredMoves/SGM_AnimRootMotionLayeredMove.h"
 #include "MoverComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Tags/SGM_NativeTags.h"
+
+namespace
+{
+	constexpr float ContactInitialProbeInflation = 5.0f;
+	constexpr float ContactStillBlockingSlack = 12.0f;
+}
 
 USGM_MontageComponent::USGM_MontageComponent()
 {
@@ -271,7 +278,7 @@ void USGM_MontageComponent::SetRootMotionContactBlockingEnabled(bool bEnabled)
 		SetContactRootMotionBlocked(false);
 	}
 
-	SetComponentTickEnabled(RootMotionReleasePercent >= 0.0f || RepMontageState.bIsPlaying);
+	SetComponentTickEnabled(RootMotionReleasePercent >= 0.0f || RepMontageState.bIsPlaying || bRootMotionBlockedByContact);
 }
 
 void USGM_MontageComponent::SetCanBlendUpperAndLowerBody(bool bInCanBlend)
@@ -569,6 +576,7 @@ void USGM_MontageComponent::UpdateRootMotionControl(float DeltaSeconds)
 	}
 
 	UpdateMontagePercentRelease();
+	UpdateBlockedContactResume();
 }
 
 void USGM_MontageComponent::UpdateMontagePercentRelease()
@@ -605,6 +613,50 @@ void USGM_MontageComponent::UpdateMontagePercentRelease()
 	DisableRootMotionPredictedReplicated();
 }
 
+void USGM_MontageComponent::UpdateBlockedContactResume()
+{
+	if (!bRootMotionBlockedByContact)
+	{
+		return;
+	}
+
+	const AActor* OwnerActor = GetOwner();
+	const UCapsuleComponent* OwnerCapsule = GetOwnerCapsuleComponent();
+	if (!OwnerActor || !OwnerCapsule)
+	{
+		ContactBlockingActors.Reset();
+		SetContactRootMotionBlocked(false);
+		return;
+	}
+
+	const float OwnerRadius = OwnerCapsule->GetScaledCapsuleRadius();
+	const FVector OwnerLocation = OwnerActor->GetActorLocation();
+
+	for (auto It = ContactBlockingActors.CreateIterator(); It; ++It)
+	{
+		const AActor* BlockingActor = It->Get();
+		if (!BlockingActor || !IsActorWithinContactBlockAngle(BlockingActor))
+		{
+			It.RemoveCurrent();
+			continue;
+		}
+
+		const UCapsuleComponent* OtherCapsule = BlockingActor->FindComponentByClass<UCapsuleComponent>();
+		const float OtherRadius = OtherCapsule ? OtherCapsule->GetScaledCapsuleRadius() : OwnerRadius;
+		const float MaxContactDistance = OwnerRadius + OtherRadius + ContactStillBlockingSlack;
+
+		FVector ToOther = BlockingActor->GetActorLocation() - OwnerLocation;
+		ToOther.Z = 0.0f;
+
+		if (ToOther.SizeSquared() > FMath::Square(MaxContactDistance))
+		{
+			It.RemoveCurrent();
+		}
+	}
+
+	SetContactRootMotionBlocked(ContactBlockingActors.Num() > 0);
+}
+
 bool USGM_MontageComponent::IsActorWithinContactBlockAngle(const AActor* OtherActor) const
 {
 	const AActor* OwnerActor = GetOwner();
@@ -633,19 +685,37 @@ void USGM_MontageComponent::RefreshInitialContactBlockState()
 		return;
 	}
 
+	AActor* OwnerActor = GetOwner();
 	UCapsuleComponent* CapsuleComponent = GetOwnerCapsuleComponent();
-	if (!CapsuleComponent)
+	UWorld* World = GetWorld();
+	if (!OwnerActor || !CapsuleComponent || !World)
 	{
 		return;
 	}
 
-	TArray<AActor*> OverlappingActors;
-	CapsuleComponent->GetOverlappingActors(OverlappingActors, APawn::StaticClass());
+	FCollisionObjectQueryParams ObjectQueryParams;
+	ObjectQueryParams.AddObjectTypesToQuery(ECC_Pawn);
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(SGMRootMotionInitialContactBlock), false, OwnerActor);
+
+	const FCollisionShape CollisionShape = FCollisionShape::MakeCapsule(
+		CapsuleComponent->GetScaledCapsuleRadius() + ContactInitialProbeInflation,
+		CapsuleComponent->GetScaledCapsuleHalfHeight() + ContactInitialProbeInflation);
+
+	TArray<FOverlapResult> Overlaps;
+	World->OverlapMultiByObjectType(
+		Overlaps,
+		OwnerActor->GetActorLocation(),
+		OwnerActor->GetActorQuat(),
+		ObjectQueryParams,
+		CollisionShape,
+		QueryParams);
 
 	ContactBlockingActors.Reset();
-	for (AActor* OverlappingActor : OverlappingActors)
+	for (const FOverlapResult& Overlap : Overlaps)
 	{
-		if (IsActorWithinContactBlockAngle(OverlappingActor))
+		AActor* OverlappingActor = Overlap.GetActor();
+		if (OverlappingActor && IsActorWithinContactBlockAngle(OverlappingActor))
 		{
 			ContactBlockingActors.Add(OverlappingActor);
 		}
@@ -668,6 +738,7 @@ void USGM_MontageComponent::SetContactRootMotionBlocked(bool bInBlocked)
 
 	bRootMotionBlockedByContact = bInBlocked;
 	SetReplicatedRootMotionScale(bRootMotionBlockedByContact ? 0.0f : 1.0f);
+	SetComponentTickEnabled(RootMotionReleasePercent >= 0.0f || RepMontageState.bIsPlaying || bRootMotionBlockedByContact);
 }
 
 void USGM_MontageComponent::BindContactBlockingEvents()
@@ -689,6 +760,12 @@ void USGM_MontageComponent::BindContactBlockingEvents()
 	}
 
 	BoundContactCapsule = CapsuleComponent;
+
+	// Pawn capsules commonly block each other, so hit events are the primary contact signal.
+	BoundContactCapsule->SetNotifyRigidBodyCollision(true);
+	BoundContactCapsule->OnComponentHit.AddUniqueDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleHit);
+
+	// Keep overlap support too for projects that use overlap-based pawn contact.
 	BoundContactCapsule->OnComponentBeginOverlap.AddUniqueDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleBeginOverlap);
 	BoundContactCapsule->OnComponentEndOverlap.AddUniqueDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleEndOverlap);
 }
@@ -700,6 +777,7 @@ void USGM_MontageComponent::UnbindContactBlockingEvents()
 		return;
 	}
 
+	BoundContactCapsule->OnComponentHit.RemoveDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleHit);
 	BoundContactCapsule->OnComponentBeginOverlap.RemoveDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleBeginOverlap);
 	BoundContactCapsule->OnComponentEndOverlap.RemoveDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleEndOverlap);
 	BoundContactCapsule = nullptr;
@@ -725,6 +803,21 @@ void USGM_MontageComponent::OnOwnerCapsuleEndOverlap(UPrimitiveComponent* Overla
 {
 	ContactBlockingActors.Remove(OtherActor);
 	SetContactRootMotionBlocked(ContactBlockingActors.Num() > 0);
+}
+
+void USGM_MontageComponent::OnOwnerCapsuleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
+	UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+{
+	if (!bEnableRootMotionContactBlocking || bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
+	{
+		return;
+	}
+
+	if (OtherActor && OtherActor != GetOwner() && OtherActor->IsA<APawn>() && IsActorWithinContactBlockAngle(OtherActor))
+	{
+		ContactBlockingActors.Add(OtherActor);
+		SetContactRootMotionBlocked(true);
+	}
 }
 
 bool USGM_MontageComponent::ApplyRootMotionScaleToCurrentMontage(float InRootMotionScale)
