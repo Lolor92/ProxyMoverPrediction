@@ -2,7 +2,9 @@
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/Pawn.h"
 #include "MotionWarpingComponent.h"
 #include "MoverComponent.h"
 #include "MoverTypes.h"
@@ -27,7 +29,6 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 	const FMoverTimeStep& TimeStep, const UMoverComponent* MoverComp, UMoverBlackboard* SimBlackboard,
 	FProposedMove& OutProposedMove)
 {
-	// Match Epic's move lifetime rule: if the montage is interrupted, this move ends too.
 	if (!TimeStep.bIsResimulating)
 	{
 		bool bIsMontageStillPlaying = false;
@@ -82,16 +83,70 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 	const FTransform WorldSpaceRootMotion =
 		MoverComp->ConvertLocalRootMotionToWorld(LocalRootMotion, DeltaSeconds, &SimActorTransform, &WarpingContext);
 
+	FVector ScaledTranslation = WorldSpaceRootMotion.GetTranslation() * RootMotionScale;
+	FVector ScaledRotationVector = WorldSpaceRootMotion.GetRotation().ToRotationVector() * RootMotionScale;
+
+	if (bStopRootMotionOnPawnContact && RootMotionScale > UE_KINDA_SMALL_NUMBER && !ScaledTranslation.IsNearlyZero())
+	{
+		const AActor* OwnerActor = MoverComp ? MoverComp->GetOwner() : nullptr;
+		const UWorld* World = OwnerActor ? OwnerActor->GetWorld() : nullptr;
+		const UCapsuleComponent* OwnerCapsule = OwnerActor ? OwnerActor->FindComponentByClass<UCapsuleComponent>() : nullptr;
+
+		if (OwnerActor && World && OwnerCapsule)
+		{
+			FVector SweepDelta = ScaledTranslation;
+			SweepDelta.Z = 0.0f;
+
+			if (!SweepDelta.IsNearlyZero())
+			{
+				const FVector StartLocation = SyncState->GetLocation_WorldSpace();
+				const FVector EndLocation = StartLocation + SweepDelta;
+				const FCollisionShape SweepShape = FCollisionShape::MakeCapsule(
+					OwnerCapsule->GetScaledCapsuleRadius(),
+					OwnerCapsule->GetScaledCapsuleHalfHeight());
+
+				FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(SGMRootMotionPawnContactSweep), false, OwnerActor);
+				FCollisionObjectQueryParams ObjectQueryParams;
+				ObjectQueryParams.AddObjectTypesToQuery(ECC_Pawn);
+
+				FHitResult Hit;
+				const bool bHitPawn = World->SweepSingleByObjectType(
+					Hit,
+					StartLocation,
+					EndLocation,
+					SyncState->GetOrientation_WorldSpace().Quaternion(),
+					ObjectQueryParams,
+					SweepShape,
+					QueryParams);
+
+				const AActor* HitActor = Hit.GetActor();
+				if (bHitPawn && HitActor && HitActor != OwnerActor && HitActor->IsA<APawn>())
+				{
+					FVector ToHitActor = HitActor->GetActorLocation() - StartLocation;
+					ToHitActor.Z = 0.0f;
+
+					const FVector Forward = SyncState->GetOrientation_WorldSpace().Vector().GetSafeNormal2D();
+					const float MinForwardDot = FMath::Cos(FMath::DegreesToRadians(PawnContactBlockHalfAngleDegrees));
+					const bool bWithinBlockAngle = ToHitActor.IsNearlyZero()
+						|| FVector::DotProduct(Forward, ToHitActor.GetSafeNormal()) >= MinForwardDot;
+
+					if (bWithinBlockAngle)
+					{
+						ScaledTranslation = FVector::ZeroVector;
+						ScaledRotationVector = FVector::ZeroVector;
+					}
+				}
+			}
+		}
+	}
+
 	OutProposedMove = FProposedMove();
 	OutProposedMove.MixMode = MixMode;
 
 	if (DeltaSeconds > UE_KINDA_SMALL_NUMBER)
 	{
-		// Scaling the output lets us keep montage sync active while giving movement back to locomotion.
-		OutProposedMove.LinearVelocity =
-			(WorldSpaceRootMotion.GetTranslation() * RootMotionScale) / DeltaSeconds;
-		OutProposedMove.AngularVelocityDegrees =
-			FMath::RadiansToDegrees((WorldSpaceRootMotion.GetRotation().ToRotationVector() * RootMotionScale) / DeltaSeconds);
+		OutProposedMove.LinearVelocity = ScaledTranslation / DeltaSeconds;
+		OutProposedMove.AngularVelocityDegrees = FMath::RadiansToDegrees(ScaledRotationVector / DeltaSeconds);
 	}
 
 	MontageState.CurrentPosition = ExtractionStartPosition;
@@ -108,6 +163,8 @@ void FSGM_AnimRootMotionLayeredMove::NetSerialize(FArchive& Ar)
 	Super::NetSerialize(Ar);
 
 	Ar << RootMotionScale;
+	Ar << bStopRootMotionOnPawnContact;
+	Ar << PawnContactBlockHalfAngleDegrees;
 }
 
 UScriptStruct* FSGM_AnimRootMotionLayeredMove::GetScriptStruct() const
