@@ -236,6 +236,7 @@ void USGM_MontageComponent::SetRootMotionContactBlockingEnabled(bool bEnabled)
 	if (bEnableRootMotionContactBlocking && ShouldDrivePredictedRootMotionControl())
 	{
 		BindContactBlockingEvents();
+		ApplyRootMotionScaleToCurrentMontage(RepMontageState.RootMotionScale);
 		RefreshInitialContactBlockState();
 	}
 	else
@@ -478,6 +479,10 @@ void USGM_MontageComponent::QueueRootMotionMove(UAnimMontage* InMontage, float I
 	AnimRootMotionMove->MontageState.StartingMontagePosition = InStartingMontagePosition;
 	AnimRootMotionMove->MontageState.CurrentPosition = InStartingMontagePosition;
 	AnimRootMotionMove->RootMotionScale = InRootMotionScale;
+	AnimRootMotionMove->bStopRootMotionOnPawnContact = bEnableRootMotionContactBlocking
+		&& ShouldDrivePredictedRootMotionControl()
+		&& InRootMotionScale > UE_KINDA_SMALL_NUMBER;
+	AnimRootMotionMove->PawnContactBlockHalfAngleDegrees = ContactBlockHalfAngleDegrees;
 	AnimRootMotionMove->MixMode = FMath::IsNearlyZero(InRootMotionScale)
 		? EMoveMixMode::AdditiveVelocity
 		: EMoveMixMode::OverrideAll;
