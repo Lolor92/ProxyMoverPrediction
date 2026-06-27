@@ -104,7 +104,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
 	void ClearRootMotionRelease();
 
-	// Enables/disables capsule-overlap-event based root-motion pausing while the montage is still in its root-motion phase.
+	// Enables/disables capsule contact-based root-motion pausing while the montage is still in its root-motion phase.
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
 	void SetRootMotionContactBlockingEnabled(bool bEnabled);
 
@@ -179,6 +179,7 @@ private:
 	
 	void UpdateRootMotionControl(float DeltaSeconds);
 	void UpdateMontagePercentRelease();
+	void UpdateBlockedContactResume();
 	bool IsActorWithinContactBlockAngle(const AActor* OtherActor) const;
 	void RefreshInitialContactBlockState();
 	void SetContactRootMotionBlocked(bool bInBlocked);
@@ -195,6 +196,10 @@ private:
 	UFUNCTION()
 	void OnOwnerCapsuleEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+
+	UFUNCTION()
+	void OnOwnerCapsuleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
+		UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 	
 	// Tracks which replicated play/stop command this client already applied.
 	int32 LastAppliedMontageSerial = INDEX_NONE;
