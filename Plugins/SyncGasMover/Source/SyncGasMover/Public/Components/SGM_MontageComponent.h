@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -40,6 +40,14 @@ struct FSGMRepMontageState
 
 	UPROPERTY()
 	bool bRootMotionDisabled = false;
+
+	// Incremented when the current montage root-motion contribution changes without stopping the montage.
+	UPROPERTY()
+	int32 RootMotionScaleSerial = 0;
+
+	// 1 = normal montage root motion through Mover. 0 = montage provider stays alive but contributes no movement.
+	UPROPERTY()
+	float RootMotionScale = 1.0f;
 };
 
 UCLASS(ClassGroup = (SyncGasMover), meta = (BlueprintSpawnableComponent))
@@ -51,6 +59,7 @@ public:
 	USGM_MontageComponent();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	
 	// Plays immediately on this machine. Use this for the owning client/server.
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Montage")
@@ -84,6 +93,28 @@ public:
 	// disable locally now, then replicate/request the same disable from the server.
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Montage")
 	bool DisableRootMotionPredictedReplicated();
+
+	// Begin watching the active replicated montage and release root motion after a percent of the montage has played.
+	// Example: 0.70 means release at 70% montage progress.
+	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
+	void StartRootMotionReleaseAtMontagePercent(float ReleasePercent);
+
+	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
+	void ClearRootMotionRelease();
+
+	// Enables/disables contact-based root-motion pausing while the montage is still in its root-motion phase.
+	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
+	void SetRootMotionContactBlockingEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
+	bool IsRootMotionContactBlocked() const { return bRootMotionBlockedByContact; }
+
+	// Replicated flag for AnimBP upper/lower body blending after root-motion release.
+	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Animation")
+	void SetCanBlendUpperAndLowerBody(bool bInCanBlend);
+
+	UFUNCTION(BlueprintPure, Category = "SyncGasMover|Animation")
+	bool GetCanBlendUpperAndLowerBody() const { return bCanBlendUpperAndLowerBody; }
 	
 	// Server-side command: replicate a montage play event to simulated clients.
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Montage")
@@ -101,6 +132,12 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerDisableRootMotionForReplicatedMontage();
 
+	UFUNCTION(Server, Reliable)
+	void ServerSetCanBlendUpperAndLowerBody(bool bInCanBlend);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetReplicatedRootMotionScale(float InRootMotionScale);
+
 protected:
 	virtual void BeginPlay() override;
 	
@@ -114,9 +151,26 @@ protected:
 	// Replicated montage command state.
 	UPROPERTY(ReplicatedUsing = OnRep_RepMontageState)
 	FSGMRepMontageState RepMontageState;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Root Motion|Contact")
+	bool bEnableRootMotionContactBlocking = false;
+
+	// Half-angle of the front cone used for contact root-motion blocking. 40 means 40 degrees left/right.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Root Motion|Contact", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+	float ContactBlockHalfAngleDegrees = 40.0f;
+
+	// Inflates the owner's capsule probe slightly so touching/near-penetrating pawns are caught reliably.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Root Motion|Contact", meta = (ClampMin = "0.0"))
+	float ContactBlockProbeInflation = 5.0f;
+
+	UPROPERTY(ReplicatedUsing = OnRep_CanBlendUpperAndLowerBody, BlueprintReadOnly, Category = "Animation")
+	bool bCanBlendUpperAndLowerBody = false;
 	
 	UFUNCTION()
 	void OnRep_RepMontageState();
+
+	UFUNCTION()
+	void OnRep_CanBlendUpperAndLowerBody();
 
 private:
 	void ResolveMeshComponent();
@@ -124,9 +178,24 @@ private:
 	void QueueRootMotionMove(UAnimMontage* InMontage, float InPlayRate, float InStartingMontagePosition,
 		float InRootMotionScale = 1.0f);
 	
+	void UpdateRootMotionControl(float DeltaSeconds);
+	void UpdateMontagePercentRelease();
+	void UpdateContactRootMotionBlocking();
+	bool HasBlockingPawnInFront() const;
+	bool ApplyRootMotionScaleToCurrentMontage(float InRootMotionScale);
+	void SetReplicatedRootMotionScale(float InRootMotionScale);
+	void ResetLocalRootMotionControlState();
+	
 	// Tracks which replicated play/stop command this client already applied.
 	int32 LastAppliedMontageSerial = INDEX_NONE;
 
 	// Tracks which replicated root-motion-disable command this client already applied.
 	int32 LastAppliedDisableRootMotionSerial = INDEX_NONE;
+
+	// Tracks which replicated root-motion scale command this client already applied.
+	int32 LastAppliedRootMotionScaleSerial = INDEX_NONE;
+
+	float RootMotionReleasePercent = -1.0f;
+	bool bRootMotionReleasedByPercent = false;
+	bool bRootMotionBlockedByContact = false;
 };
