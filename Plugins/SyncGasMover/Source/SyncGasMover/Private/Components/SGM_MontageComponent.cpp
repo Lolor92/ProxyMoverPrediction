@@ -15,6 +15,16 @@ namespace
 {
 	constexpr float ContactInitialProbeInflation = 5.0f;
 	constexpr float ContactStillBlockingSlack = 12.0f;
+
+	float NormalizeReleasePercent(float InReleasePercent)
+	{
+		// Accept both 0.5 and 50 as 50%.
+		const float NormalizedPercent = InReleasePercent > 1.0f
+			? InReleasePercent / 100.0f
+			: InReleasePercent;
+
+		return FMath::Clamp(NormalizedPercent, 0.0f, 1.0f);
+	}
 }
 
 USGM_MontageComponent::USGM_MontageComponent()
@@ -222,7 +232,7 @@ USkeletalMeshComponent* USGM_MontageComponent::GetResolvedMontageMeshComponent()
 
 void USGM_MontageComponent::StartRootMotionReleaseAtMontagePercent(float ReleasePercent)
 {
-	RootMotionReleasePercent = FMath::Clamp(ReleasePercent, 0.0f, 1.0f);
+	RootMotionReleasePercent = NormalizeReleasePercent(ReleasePercent);
 	bRootMotionReleasedByPercent = false;
 	SetCanBlendUpperAndLowerBody(false);
 	SetComponentTickEnabled(true);
