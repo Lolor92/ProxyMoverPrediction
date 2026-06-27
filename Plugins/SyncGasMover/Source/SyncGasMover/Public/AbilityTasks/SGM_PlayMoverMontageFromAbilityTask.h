@@ -37,7 +37,7 @@ public:
 		float PlayRate = 1.0f,
 		float StartTimeSeconds = 0.0f,
 		FName StartSection = NAME_None,
-		bool bEnableRootMotionContactBlocking = false,
+		float RootMotionContactBlockHalfAngleDegrees = 0.0f,
 		float RootMotionReleasePercent = -1.0f);
 
 	virtual void Activate() override;
@@ -67,7 +67,7 @@ private:
 	float PlayRateToUse = 1.0f;
 	float StartTimeSecondsToUse = 0.0f;
 	FName StartSectionToUse = NAME_None;
-	bool bEnableContactBlocking = false;
+	float ContactBlockHalfAngleDegrees = 0.0f;
 	float ReleasePercent = -1.0f;
 	bool bPlayedSuccessfully = false;
 };

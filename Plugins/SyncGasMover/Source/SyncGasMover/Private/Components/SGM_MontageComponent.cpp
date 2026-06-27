@@ -244,9 +244,10 @@ void USGM_MontageComponent::ClearRootMotionRelease()
 	SetCanBlendUpperAndLowerBody(false);
 }
 
-void USGM_MontageComponent::SetRootMotionContactBlockingEnabled(bool bEnabled)
+void USGM_MontageComponent::SetRootMotionContactBlockingAngleDegrees(float HalfAngleDegrees)
 {
-	bEnableRootMotionContactBlocking = bEnabled;
+	ContactBlockHalfAngleDegrees = FMath::Clamp(HalfAngleDegrees, 0.0f, 180.0f);
+	bEnableRootMotionContactBlocking = ContactBlockHalfAngleDegrees > UE_KINDA_SMALL_NUMBER;
 
 	if (bEnableRootMotionContactBlocking && ShouldDrivePredictedRootMotionControl())
 	{

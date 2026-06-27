@@ -13,7 +13,7 @@ USGM_PlayMoverMontageFromAbilityTask* USGM_PlayMoverMontageFromAbilityTask::Play
 	float PlayRate,
 	float StartTimeSeconds,
 	FName StartSection,
-	bool bEnableRootMotionContactBlocking,
+	float RootMotionContactBlockHalfAngleDegrees,
 	float RootMotionReleasePercent)
 {
 	USGM_PlayMoverMontageFromAbilityTask* Task =
@@ -23,7 +23,7 @@ USGM_PlayMoverMontageFromAbilityTask* USGM_PlayMoverMontageFromAbilityTask::Play
 	Task->PlayRateToUse = PlayRate;
 	Task->StartTimeSecondsToUse = StartTimeSeconds;
 	Task->StartSectionToUse = StartSection;
-	Task->bEnableContactBlocking = bEnableRootMotionContactBlocking;
+	Task->ContactBlockHalfAngleDegrees = RootMotionContactBlockHalfAngleDegrees;
 	Task->ReleasePercent = RootMotionReleasePercent;
 	return Task;
 }
@@ -51,7 +51,7 @@ void USGM_PlayMoverMontageFromAbilityTask::Activate()
 		return;
 	}
 
-	MontageComponent->SetRootMotionContactBlockingEnabled(bEnableContactBlocking);
+	MontageComponent->SetRootMotionContactBlockingAngleDegrees(ContactBlockHalfAngleDegrees);
 
 	if (ReleasePercent >= 0.0f)
 	{

@@ -91,7 +91,7 @@ public:
 	void ClearRootMotionRelease();
 
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
-	void SetRootMotionContactBlockingEnabled(bool bEnabled);
+	void SetRootMotionContactBlockingAngleDegrees(float HalfAngleDegrees);
 
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
 	bool IsRootMotionContactBlocked() const { return bRootMotionBlockedByContact; }
