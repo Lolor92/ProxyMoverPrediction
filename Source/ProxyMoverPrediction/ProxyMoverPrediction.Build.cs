@@ -19,7 +19,8 @@ public class ProxyMoverPrediction : ModuleRules
 			"GameplayTags",
 			"GameplayTasks",
 			"Mover",
-			"MotionWarping"
+			"MotionWarping",
+			"SyncGasMover"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
