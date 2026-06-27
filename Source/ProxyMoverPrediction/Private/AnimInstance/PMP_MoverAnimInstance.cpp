@@ -1,4 +1,5 @@
-﻿#include "ProxyMoverPrediction/Public/AnimInstance/PMP_MoverAnimInstance.h"
+#include "ProxyMoverPrediction/Public/AnimInstance/PMP_MoverAnimInstance.h"
+#include "Components/SGM_MontageComponent.h"
 #include "DefaultMovementSet/CharacterMoverComponent.h"
 #include "GameFramework/Pawn.h"
 
@@ -13,6 +14,7 @@ void UPMP_MoverAnimInstance::NativeInitializeAnimation()
 
 	// We read movement from Mover, not CharacterMovementComponent.
 	MoverComponent = PawnOwner->FindComponentByClass<UCharacterMoverComponent>();
+	MontageComponent = USGM_MontageComponent::FindMontageComponentFromAnimInstance(this);
 }
 
 void UPMP_MoverAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
@@ -27,6 +29,19 @@ void UPMP_MoverAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	if (PawnOwner && !MoverComponent)
 	{
 		MoverComponent = PawnOwner->FindComponentByClass<UCharacterMoverComponent>();
+	}
+
+	if (!MontageComponent)
+	{
+		MontageComponent = USGM_MontageComponent::FindMontageComponentFromAnimInstance(this);
+	}
+
+	const bool bNewCanBlendUpperAndLowerBody = MontageComponent
+		&& MontageComponent->GetCanBlendUpperAndLowerBody();
+
+	if (bCanBlendUpperAndLowerBody != bNewCanBlendUpperAndLowerBody)
+	{
+		bCanBlendUpperAndLowerBody = bNewCanBlendUpperAndLowerBody;
 	}
 
 	if (!PawnOwner || !MoverComponent) return;
