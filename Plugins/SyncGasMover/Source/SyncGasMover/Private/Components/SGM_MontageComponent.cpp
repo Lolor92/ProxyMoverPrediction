@@ -311,6 +311,11 @@ bool USGM_MontageComponent::TryReleaseRootMotionForMovementInput()
 
 void USGM_MontageComponent::SetCanBlendUpperAndLowerBody(bool bInCanBlend)
 {
+	if (bCanBlendUpperAndLowerBody == bInCanBlend)
+	{
+		return;
+	}
+
 	bCanBlendUpperAndLowerBody = bInCanBlend;
 
 	AActor* OwnerActor = GetOwner();
