@@ -6,7 +6,6 @@
 #include "MotionWarpingComponent.h"
 #include "MoverComponent.h"
 #include "MoverTypes.h"
-#include "SyncGasMover.h"
 #include "Tags/SGM_NativeTags.h"
 
 bool FSGM_AnimRootMotionLayeredMove::HasGameplayTag(FGameplayTag TagToFind, bool bExactMatch) const
@@ -18,28 +17,7 @@ bool FSGM_AnimRootMotionLayeredMove::HasGameplayTag(FGameplayTag TagToFind, bool
 
 	if (bIgnoreRetriggerCancellationWhileQueued && StartSimTimeMs < 0.0)
 	{
-		if (bMatchesRootMotionTag)
-		{
-			UE_LOG(LogSyncGasMover, Warning, TEXT("LayeredMove HasGameplayTag ignored while queued: Tag=%s Exact=%s StartSimTimeMs=%.3f DurationMs=%.3f Montage=%s"),
-				*TagToFind.ToString(),
-				bExactMatch ? TEXT("true") : TEXT("false"),
-				StartSimTimeMs,
-				DurationMs,
-				MontageState.Montage ? *MontageState.Montage->GetName() : TEXT("None"));
-		}
-
 		return false;
-	}
-
-	if (bMatchesRootMotionTag)
-	{
-		UE_LOG(LogSyncGasMover, Warning, TEXT("LayeredMove HasGameplayTag matched root-motion tag: Tag=%s Exact=%s StartSimTimeMs=%.3f DurationMs=%.3f Montage=%s CurrentPosition=%.3f"),
-			*TagToFind.ToString(),
-			bExactMatch ? TEXT("true") : TEXT("false"),
-			StartSimTimeMs,
-			DurationMs,
-			MontageState.Montage ? *MontageState.Montage->GetName() : TEXT("None"),
-			MontageState.CurrentPosition);
 	}
 
 	return bMatchesRootMotionTag;
@@ -117,14 +95,6 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 	}
 
 	MontageState.CurrentPosition = ExtractionStartPosition;
-
-	UE_LOG(LogSyncGasMover, VeryVerbose, TEXT("SGM GenerateMove: Montage=%s Position=%.3f Scale=%.3f MixMode=%d LinearVelocity=%s"),
-		MontageState.Montage ? *MontageState.Montage->GetName() : TEXT("None"),
-		MontageState.CurrentPosition,
-		RootMotionScale,
-		static_cast<int32>(MixMode),
-		*OutProposedMove.LinearVelocity.ToString());
-
 	return true;
 }
 
