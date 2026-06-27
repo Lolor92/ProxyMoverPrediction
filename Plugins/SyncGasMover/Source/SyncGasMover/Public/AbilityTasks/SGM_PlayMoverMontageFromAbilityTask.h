@@ -4,8 +4,10 @@
 #include "Abilities/Tasks/AbilityTask.h"
 #include "SGM_PlayMoverMontageFromAbilityTask.generated.h"
 
+class UAnimInstance;
 class UAnimMontage;
 class USGM_MontageComponent;
+class USkeletalMeshComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSGMPlayMoverMontageTaskDelegate);
 
@@ -16,16 +18,21 @@ class SYNCGASMOVER_API USGM_PlayMoverMontageFromAbilityTask : public UAbilityTas
 
 public:
 	UPROPERTY(BlueprintAssignable)
-	FSGMPlayMoverMontageTaskDelegate OnStarted;
+	FSGMPlayMoverMontageTaskDelegate OnCompleted;
 
 	UPROPERTY(BlueprintAssignable)
-	FSGMPlayMoverMontageTaskDelegate OnFailed;
+	FSGMPlayMoverMontageTaskDelegate OnBlendOut;
 
-	// Plays a predicted replicated SGM/Mover montage from a Gameplay Ability and optionally enables
-	// contact blocking plus root-motion release in one clean Blueprint node.
-	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Ability", meta = (DisplayName = "Play SGM Mover Montage From Ability", HidePin = "OwningAbility", DefaultToSelf = "OwningAbility", BlueprintInternalUseOnly = "true"))
-	static USGM_PlayMoverMontageFromAbilityTask* PlaySGMMoverMontageFromAbility(
+	UPROPERTY(BlueprintAssignable)
+	FSGMPlayMoverMontageTaskDelegate OnInterrupted;
+
+	UPROPERTY(BlueprintAssignable)
+	FSGMPlayMoverMontageTaskDelegate OnCancelled;
+
+	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Ability", meta = (DisplayName = "Play SGM Mover Montage And Wait", HidePin = "OwningAbility", DefaultToSelf = "OwningAbility", BlueprintInternalUseOnly = "true"))
+	static USGM_PlayMoverMontageFromAbilityTask* PlaySGMMoverMontageAndWait(
 		UGameplayAbility* OwningAbility,
+		FName TaskInstanceName,
 		UAnimMontage* Montage,
 		float PlayRate = 1.0f,
 		float StartTimeSeconds = 0.0f,
@@ -34,8 +41,26 @@ public:
 		float RootMotionReleasePercent = -1.0f);
 
 	virtual void Activate() override;
+	virtual void ExternalCancel() override;
+	virtual void OnDestroy(bool bInOwnerFinished) override;
 
 private:
+	void OnMontageBlendingOut(UAnimMontage* InMontage, bool bInterrupted);
+	void OnMontageEnded(UAnimMontage* InMontage, bool bInterrupted);
+	bool StopPlayingMontage();
+	void ClearMontageDelegates();
+	void BroadcastCancelledAndEnd();
+	USGM_MontageComponent* FindMontageComponent() const;
+
+	UPROPERTY()
+	TObjectPtr<USGM_MontageComponent> MontageComponent = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<USkeletalMeshComponent> MeshComponent = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UAnimInstance> AnimInstance = nullptr;
+
 	UPROPERTY()
 	TObjectPtr<UAnimMontage> MontageToPlay = nullptr;
 
@@ -44,6 +69,5 @@ private:
 	FName StartSectionToUse = NAME_None;
 	bool bEnableContactBlocking = false;
 	float ReleasePercent = -1.0f;
-
-	USGM_MontageComponent* FindMontageComponent() const;
+	bool bPlayedSuccessfully = false;
 };
