@@ -6,6 +6,8 @@
 
 class UAnimMontage;
 class UMoverComponent;
+class UPrimitiveComponent;
+class UCapsuleComponent;
 class USkeletalMeshComponent;
 
 USTRUCT(BlueprintType)
@@ -102,7 +104,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
 	void ClearRootMotionRelease();
 
-	// Enables/disables contact-based root-motion pausing while the montage is still in its root-motion phase.
+	// Enables/disables capsule-overlap-event based root-motion pausing while the montage is still in its root-motion phase.
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
 	void SetRootMotionContactBlockingEnabled(bool bEnabled);
 
@@ -155,13 +157,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Root Motion|Contact")
 	bool bEnableRootMotionContactBlocking = false;
 
-	// Half-angle of the front cone used for contact root-motion blocking. 40 means 40 degrees left/right.
+	// Half-angle of the front collision acceptance cone. 40 means 40 degrees left/right.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Root Motion|Contact", meta = (ClampMin = "0.0", ClampMax = "180.0"))
 	float ContactBlockHalfAngleDegrees = 40.0f;
-
-	// Inflates the owner's capsule probe slightly so touching/near-penetrating pawns are caught reliably.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Root Motion|Contact", meta = (ClampMin = "0.0"))
-	float ContactBlockProbeInflation = 5.0f;
 
 	UPROPERTY(ReplicatedUsing = OnRep_CanBlendUpperAndLowerBody, BlueprintReadOnly, Category = "Animation")
 	bool bCanBlendUpperAndLowerBody = false;
@@ -175,16 +173,28 @@ protected:
 private:
 	void ResolveMeshComponent();
 	UMoverComponent* GetMoverComponent() const;
+	UCapsuleComponent* GetOwnerCapsuleComponent() const;
 	void QueueRootMotionMove(UAnimMontage* InMontage, float InPlayRate, float InStartingMontagePosition,
 		float InRootMotionScale = 1.0f);
 	
 	void UpdateRootMotionControl(float DeltaSeconds);
 	void UpdateMontagePercentRelease();
-	void UpdateContactRootMotionBlocking();
-	bool HasBlockingPawnInFront() const;
+	bool IsActorWithinContactBlockAngle(const AActor* OtherActor) const;
+	void RefreshInitialContactBlockState();
+	void SetContactRootMotionBlocked(bool bInBlocked);
+	void BindContactBlockingEvents();
+	void UnbindContactBlockingEvents();
 	bool ApplyRootMotionScaleToCurrentMontage(float InRootMotionScale);
 	void SetReplicatedRootMotionScale(float InRootMotionScale);
 	void ResetLocalRootMotionControlState();
+
+	UFUNCTION()
+	void OnOwnerCapsuleBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
+	UFUNCTION()
+	void OnOwnerCapsuleEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 	
 	// Tracks which replicated play/stop command this client already applied.
 	int32 LastAppliedMontageSerial = INDEX_NONE;
@@ -194,6 +204,11 @@ private:
 
 	// Tracks which replicated root-motion scale command this client already applied.
 	int32 LastAppliedRootMotionScaleSerial = INDEX_NONE;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCapsuleComponent> BoundContactCapsule = nullptr;
+
+	TSet<TWeakObjectPtr<AActor>> ContactBlockingActors;
 
 	float RootMotionReleasePercent = -1.0f;
 	bool bRootMotionReleasedByPercent = false;
