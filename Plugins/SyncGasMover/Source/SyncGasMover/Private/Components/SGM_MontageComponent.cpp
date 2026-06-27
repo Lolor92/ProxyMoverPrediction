@@ -214,6 +214,12 @@ bool USGM_MontageComponent::DisableRootMotionPredictedReplicated()
 	return bDisabledLocally;
 }
 
+USkeletalMeshComponent* USGM_MontageComponent::GetResolvedMontageMeshComponent()
+{
+	ResolveMeshComponent();
+	return MontageMeshComponent;
+}
+
 void USGM_MontageComponent::StartRootMotionReleaseAtMontagePercent(float ReleasePercent)
 {
 	RootMotionReleasePercent = FMath::Clamp(ReleasePercent, 0.0f, 1.0f);
