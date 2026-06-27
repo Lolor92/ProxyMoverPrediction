@@ -1,4 +1,4 @@
-﻿#include "Components/SGM_MontageComponent.h"
+#include "Components/SGM_MontageComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -451,6 +451,45 @@ void USGM_MontageComponent::ServerPlayReplicatedMontage_Implementation(UAnimMont
 		InStartTimeSeconds,
 		*InStartSection.ToString());
 
+	// In a predicted GAS ability, the owning client runs the ability immediately,
+	// and the server runs the same ability authoritatively. The client's montage RPC
+	// can arrive after the server ability already called PlayPredictedReplicatedMontage.
+	// Treat that late RPC as confirmation, not as a second montage start.
+	if (RepMontageState.bIsPlaying
+		&& RepMontageState.Montage == InMontage
+		&& FMath::IsNearlyEqual(RepMontageState.PlayRate, InPlayRate)
+		&& FMath::IsNearlyEqual(RepMontageState.StartTimeSeconds, InStartTimeSeconds)
+		&& RepMontageState.StartSection == InStartSection)
+	{
+		ResolveMeshComponent();
+
+		float CurrentServerMontagePosition = 0.0f;
+		bool bServerAlreadyPlayingSameMontage = false;
+
+		if (MontageMeshComponent)
+		{
+			if (UAnimInstance* AnimInstance = MontageMeshComponent->GetAnimInstance())
+			{
+				if (FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(InMontage))
+				{
+					bServerAlreadyPlayingSameMontage = true;
+					CurrentServerMontagePosition = MontageInstance->GetPosition();
+				}
+			}
+		}
+
+		constexpr float DuplicatePredictedPlayRejectWindowSeconds = 0.75f;
+		if (bServerAlreadyPlayingSameMontage && CurrentServerMontagePosition <= DuplicatePredictedPlayRejectWindowSeconds)
+		{
+			UE_LOG(LogSyncGasMover, Warning, TEXT("ServerPlayReplicatedMontage duplicate predicted RPC ignored: %s Montage=%s Serial=%d Position=%.3f"),
+				*SyncGasMoverLog::OwnerContext(this),
+				*SyncGasMoverLog::MontageName(InMontage),
+				RepMontageState.Serial,
+				CurrentServerMontagePosition);
+			return;
+		}
+	}
+
 	StartReplicatedMontage(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
 }
 
@@ -521,13 +560,27 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 
 		if (RepMontageState.Montage)
 		{
-			UE_LOG(LogSyncGasMover, Warning, TEXT("OnRep applying play command: %s Montage=%s Serial=%d"),
-				*SyncGasMoverLog::OwnerContext(this),
-				*SyncGasMoverLog::MontageName(RepMontageState.Montage),
-				RepMontageState.Serial);
+			const AActor* OwnerActor = GetOwner();
+			const bool bIsAutonomousProxy = OwnerActor && OwnerActor->GetLocalRole() == ROLE_AutonomousProxy;
+			const bool bAlreadyPlayingSameMontage = AnimInstance->Montage_IsPlaying(RepMontageState.Montage);
 
-			PlayMontageLocal(RepMontageState.Montage, RepMontageState.PlayRate,
-				RepMontageState.StartTimeSeconds, RepMontageState.StartSection);
+			if (bIsAutonomousProxy && bAlreadyPlayingSameMontage)
+			{
+				UE_LOG(LogSyncGasMover, Warning, TEXT("OnRep confirming predicted play command without replay: %s Montage=%s Serial=%d"),
+					*SyncGasMoverLog::OwnerContext(this),
+					*SyncGasMoverLog::MontageName(RepMontageState.Montage),
+					RepMontageState.Serial);
+			}
+			else
+			{
+				UE_LOG(LogSyncGasMover, Warning, TEXT("OnRep applying play command: %s Montage=%s Serial=%d"),
+					*SyncGasMoverLog::OwnerContext(this),
+					*SyncGasMoverLog::MontageName(RepMontageState.Montage),
+					RepMontageState.Serial);
+
+				PlayMontageLocal(RepMontageState.Montage, RepMontageState.PlayRate,
+					RepMontageState.StartTimeSeconds, RepMontageState.StartSection);
+			}
 		}
 	}
 
