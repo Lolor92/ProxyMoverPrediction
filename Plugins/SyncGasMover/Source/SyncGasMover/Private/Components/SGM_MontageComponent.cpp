@@ -4,6 +4,7 @@
 #include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/Pawn.h"
 #include "LayeredMoves/SGM_AnimRootMotionLayeredMove.h"
 #include "MoverComponent.h"
 #include "Net/UnrealNetwork.h"
