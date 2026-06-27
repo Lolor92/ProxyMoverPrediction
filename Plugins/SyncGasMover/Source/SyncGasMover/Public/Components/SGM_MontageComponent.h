@@ -180,6 +180,7 @@ private:
 	void UpdateRootMotionControl(float DeltaSeconds);
 	void UpdateMontagePercentRelease();
 	void UpdateBlockedContactResume();
+	bool ShouldDrivePredictedRootMotionControl() const;
 	bool IsActorWithinContactBlockAngle(const AActor* OtherActor) const;
 	void RefreshInitialContactBlockState();
 	void SetContactRootMotionBlocked(bool bInBlocked);
