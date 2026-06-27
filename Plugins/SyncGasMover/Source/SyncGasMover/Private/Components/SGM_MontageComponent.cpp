@@ -172,6 +172,16 @@ bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMonta
 		return false;
 	}
 
+	RepMontageState.Montage = InMontage;
+	RepMontageState.PlayRate = InPlayRate;
+	RepMontageState.StartTimeSeconds = InStartTimeSeconds;
+	RepMontageState.StartSection = InStartSection;
+	RepMontageState.bIsPlaying = true;
+	RepMontageState.bRootMotionDisabled = false;
+	RepMontageState.RootMotionScale = 1.0f;
+	ResetLocalRootMotionControlState();
+	SetCanBlendUpperAndLowerBody(false);
+
 	ServerPlayReplicatedMontage(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
 	return true;
 }
