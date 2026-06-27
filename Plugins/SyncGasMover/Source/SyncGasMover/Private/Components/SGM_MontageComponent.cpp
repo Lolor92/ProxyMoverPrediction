@@ -21,15 +21,12 @@ USGM_MontageComponent::USGM_MontageComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
-
-	// This component owns replicated montage commands.
 	SetIsReplicatedByDefault(true);
 }
 
 void USGM_MontageComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	
 	DOREPLIFETIME(USGM_MontageComponent, RepMontageState);
 	DOREPLIFETIME(USGM_MontageComponent, bCanBlendUpperAndLowerBody);
 }
@@ -37,7 +34,6 @@ void USGM_MontageComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 void USGM_MontageComponent::BeginPlay()
 {
 	Super::BeginPlay();
-
 	ResolveMeshComponent();
 }
 
@@ -45,30 +41,19 @@ void USGM_MontageComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
 	UpdateRootMotionControl(DeltaTime);
 }
 
 bool USGM_MontageComponent::PlayMontageLocal(UAnimMontage* InMontage, float InPlayRate, float InStartTimeSeconds,
 	FName InStartSection)
 {
-	if (!InMontage)
-	{
-		return false;
-	}
+	if (!InMontage) return false;
 
 	ResolveMeshComponent();
-
-	if (!MontageMeshComponent)
-	{
-		return false;
-	}
+	if (!MontageMeshComponent) return false;
 
 	UAnimInstance* AnimInstance = MontageMeshComponent->GetAnimInstance();
-	if (!AnimInstance)
-	{
-		return false;
-	}
+	if (!AnimInstance) return false;
 
 	const float MontageLength = InMontage->GetPlayLength();
 	const float ClampedStartTime = FMath::Clamp(
@@ -76,8 +61,6 @@ bool USGM_MontageComponent::PlayMontageLocal(UAnimMontage* InMontage, float InPl
 		0.0f,
 		FMath::Max(0.0f, MontageLength - KINDA_SMALL_NUMBER));
 
-	// bStopAllMontages = true because this is a deliberate retrigger/play command.
-	// Later we can make this configurable if layered montage slots need different behavior.
 	const float PlayedLength = AnimInstance->Montage_Play(InMontage, InPlayRate,
 		EMontagePlayReturnType::MontageLength, ClampedStartTime, true);
 
@@ -92,7 +75,6 @@ bool USGM_MontageComponent::PlayMontageLocal(UAnimMontage* InMontage, float InPl
 	{
 		if (FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(InMontage))
 		{
-			// Mover should own the movement. The montage keeps only the visual pose.
 			MontageInstance->PushDisableRootMotion();
 			QueueRootMotionMove(InMontage, InPlayRate, MontageInstance->GetPosition());
 		}
@@ -107,13 +89,11 @@ bool USGM_MontageComponent::StopMontageLocal(UAnimMontage* InMontage)
 	if (!InMontage) return false;
 
 	ResolveMeshComponent();
-
 	if (!MontageMeshComponent) return false;
 
 	UAnimInstance* AnimInstance = MontageMeshComponent->GetAnimInstance();
 	if (!AnimInstance || !AnimInstance->Montage_IsPlaying(InMontage)) return false;
 
-	// Stop only this montage. Do not kill unrelated montage slots.
 	AnimInstance->Montage_Stop(InMontage->GetDefaultBlendOutTime(), InMontage);
 	ResetLocalRootMotionControlState();
 	SetComponentTickEnabled(false);
@@ -126,7 +106,6 @@ bool USGM_MontageComponent::PlayMontageVisualOnlyLocal(UAnimMontage* InMontage, 
 	if (!InMontage) return false;
 
 	ResolveMeshComponent();
-
 	if (!MontageMeshComponent) return false;
 
 	UAnimInstance* AnimInstance = MontageMeshComponent->GetAnimInstance();
@@ -150,7 +129,6 @@ bool USGM_MontageComponent::PlayMontageVisualOnlyLocal(UAnimMontage* InMontage, 
 
 	if (FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(InMontage))
 	{
-		// The montage should keep posing only; movement has returned to Mover locomotion.
 		MontageInstance->PushDisableRootMotion();
 	}
 
@@ -168,16 +146,11 @@ bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMonta
 
 	if (OwnerActor->HasAuthority())
 	{
-		// Server path plays locally once and writes replicated state for simulated clients.
 		return StartReplicatedMontage(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
 	}
 
-	// Client path plays immediately for prediction, then asks the server to replicate.
 	const bool bPlayedLocally = PlayMontageLocal(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
-	if (!bPlayedLocally)
-	{
-		return false;
-	}
+	if (!bPlayedLocally) return false;
 
 	RepMontageState.Montage = InMontage;
 	RepMontageState.PlayRate = InPlayRate;
@@ -201,25 +174,18 @@ bool USGM_MontageComponent::DisableRootMotionForMontage(UAnimMontage* InMontage)
 	if (!InMontage) return false;
 
 	ResolveMeshComponent();
-
 	if (!MontageMeshComponent) return false;
 
 	UAnimInstance* AnimInstance = MontageMeshComponent->GetAnimInstance();
 	if (!AnimInstance) return false;
 
 	FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(InMontage);
-	if (!MontageInstance)
-	{
-		return false;
-	}
+	if (!MontageInstance) return false;
 
-	// This is the important part:
-	// the montage keeps playing visually, but root motion extraction stops.
 	MontageInstance->PushDisableRootMotion();
 
 	if (GetMoverComponent())
 	{
-		// Keep Mover's montage provider alive, but stop contributing root motion.
 		QueueRootMotionMove(InMontage, AnimInstance->Montage_GetPlayRate(InMontage), MontageInstance->GetPosition(), 0.0f);
 	}
 
@@ -229,10 +195,7 @@ bool USGM_MontageComponent::DisableRootMotionForMontage(UAnimMontage* InMontage)
 bool USGM_MontageComponent::DisableRootMotionPredictedReplicated()
 {
 	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor)
-	{
-		return false;
-	}
+	if (!OwnerActor) return false;
 
 	const bool bDisabledLocally = RepMontageState.Montage
 		? DisableRootMotionForMontage(RepMontageState.Montage)
@@ -243,7 +206,11 @@ bool USGM_MontageComponent::DisableRootMotionPredictedReplicated()
 		return DisableRootMotionForReplicatedMontage();
 	}
 
-	ServerDisableRootMotionForReplicatedMontage();
+	if (OwnerActor->GetLocalRole() == ROLE_AutonomousProxy)
+	{
+		ServerDisableRootMotionForReplicatedMontage();
+	}
+
 	return bDisabledLocally;
 }
 
@@ -266,7 +233,7 @@ void USGM_MontageComponent::SetRootMotionContactBlockingEnabled(bool bEnabled)
 {
 	bEnableRootMotionContactBlocking = bEnabled;
 
-	if (bEnableRootMotionContactBlocking)
+	if (bEnableRootMotionContactBlocking && ShouldDrivePredictedRootMotionControl())
 	{
 		BindContactBlockingEvents();
 		RefreshInitialContactBlockState();
@@ -286,12 +253,9 @@ void USGM_MontageComponent::SetCanBlendUpperAndLowerBody(bool bInCanBlend)
 	bCanBlendUpperAndLowerBody = bInCanBlend;
 
 	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor)
-	{
-		return;
-	}
+	if (!OwnerActor || OwnerActor->HasAuthority()) return;
 
-	if (!OwnerActor->HasAuthority())
+	if (OwnerActor->GetLocalRole() == ROLE_AutonomousProxy)
 	{
 		ServerSetCanBlendUpperAndLowerBody(bInCanBlend);
 	}
@@ -300,19 +264,13 @@ void USGM_MontageComponent::SetCanBlendUpperAndLowerBody(bool bInCanBlend)
 bool USGM_MontageComponent::DisableRootMotionForReplicatedMontage()
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return false;
-
 	if (!RepMontageState.Montage || !RepMontageState.bIsPlaying) return false;
 
 	const bool bDisabledLocally = DisableRootMotionForMontage(RepMontageState.Montage);
-	if (!bDisabledLocally)
-	{
-		return false;
-	}
+	if (!bDisabledLocally) return false;
 
 	RepMontageState.bRootMotionDisabled = true;
 	RepMontageState.RootMotionScale = 0.0f;
-
-	// Serial makes repeated disable events replicate even if the montage did not change.
 	RepMontageState.DisableRootMotionSerial++;
 	RepMontageState.RootMotionScaleSerial++;
 
@@ -320,16 +278,13 @@ bool USGM_MontageComponent::DisableRootMotionForReplicatedMontage()
 }
 
 bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, float InPlayRate,
-                                                   float InStartTimeSeconds, FName InStartSection)
+	float InStartTimeSeconds, FName InStartSection)
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return false;
 	if (!InMontage) return false;
 
 	const bool bPlayedLocally = PlayMontageLocal(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
-	if (!bPlayedLocally)
-	{
-		return false;
-	}
+	if (!bPlayedLocally) return false;
 
 	RepMontageState.Montage = InMontage;
 	RepMontageState.PlayRate = InPlayRate;
@@ -341,9 +296,6 @@ bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, floa
 
 	ResetLocalRootMotionControlState();
 	SetCanBlendUpperAndLowerBody(false);
-
-	// Critical: this changes even when the same montage is played again.
-	// That forces clients to treat it as a fresh play command.
 	RepMontageState.Serial++;
 
 	BindContactBlockingEvents();
@@ -356,10 +308,6 @@ bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, floa
 void USGM_MontageComponent::ServerPlayReplicatedMontage_Implementation(UAnimMontage* InMontage, float InPlayRate,
 	float InStartTimeSeconds, FName InStartSection)
 {
-	// In a predicted GAS ability, the owning client runs the ability immediately,
-	// and the server runs the same ability authoritatively. The client's montage RPC
-	// can arrive after the server ability already called PlayPredictedReplicatedMontage.
-	// Treat that late RPC as confirmation, not as a second montage start.
 	if (RepMontageState.bIsPlaying
 		&& RepMontageState.Montage == InMontage
 		&& FMath::IsNearlyEqual(RepMontageState.PlayRate, InPlayRate)
@@ -413,17 +361,13 @@ void USGM_MontageComponent::StopReplicatedMontage()
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
 
 	StopMontageLocal(RepMontageState.Montage);
-
 	RepMontageState.bIsPlaying = false;
-
-	// Critical: stop also needs a serial so clients receive same-montage stop/replay sequences.
 	RepMontageState.Serial++;
 }
 
 void USGM_MontageComponent::OnRep_RepMontageState()
 {
 	ResolveMeshComponent();
-
 	if (!MontageMeshComponent) return;
 
 	UAnimInstance* AnimInstance = MontageMeshComponent->GetAnimInstance();
@@ -438,8 +382,7 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 		{
 			if (RepMontageState.Montage && AnimInstance->Montage_IsPlaying(RepMontageState.Montage))
 			{
-				AnimInstance->Montage_Stop(RepMontageState.Montage->GetDefaultBlendOutTime(),
-					RepMontageState.Montage);
+				AnimInstance->Montage_Stop(RepMontageState.Montage->GetDefaultBlendOutTime(), RepMontageState.Montage);
 			}
 
 			ResetLocalRootMotionControlState();
@@ -459,15 +402,17 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 					RepMontageState.StartTimeSeconds, RepMontageState.StartSection);
 			}
 
-			BindContactBlockingEvents();
-			RefreshInitialContactBlockState();
+			if (ShouldDrivePredictedRootMotionControl())
+			{
+				BindContactBlockingEvents();
+				RefreshInitialContactBlockState();
+			}
+
 			SetComponentTickEnabled(true);
 		}
 	}
 
-	const bool bHasNewRootMotionScaleCommand =
-		LastAppliedRootMotionScaleSerial != RepMontageState.RootMotionScaleSerial;
-
+	const bool bHasNewRootMotionScaleCommand = LastAppliedRootMotionScaleSerial != RepMontageState.RootMotionScaleSerial;
 	if (bHasNewRootMotionScaleCommand)
 	{
 		LastAppliedRootMotionScaleSerial = RepMontageState.RootMotionScaleSerial;
@@ -478,9 +423,7 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 		}
 	}
 
-	const bool bHasNewDisableRootMotionCommand =
-		LastAppliedDisableRootMotionSerial != RepMontageState.DisableRootMotionSerial;
-
+	const bool bHasNewDisableRootMotionCommand = LastAppliedDisableRootMotionSerial != RepMontageState.DisableRootMotionSerial;
 	if (bHasNewDisableRootMotionCommand)
 	{
 		LastAppliedDisableRootMotionSerial = RepMontageState.DisableRootMotionSerial;
@@ -501,12 +444,10 @@ void USGM_MontageComponent::ResolveMeshComponent()
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor) return;
 
-	MontageMeshComponent = Cast<USkeletalMeshComponent>(
-		MontageMeshComponentReference.GetComponent(OwnerActor));
+	MontageMeshComponent = Cast<USkeletalMeshComponent>(MontageMeshComponentReference.GetComponent(OwnerActor));
 
 	if (!MontageMeshComponent)
 	{
-		// Default fallback: use the first skeletal mesh on the owner.
 		MontageMeshComponent = OwnerActor->FindComponentByClass<USkeletalMeshComponent>();
 	}
 }
@@ -527,12 +468,8 @@ void USGM_MontageComponent::QueueRootMotionMove(UAnimMontage* InMontage, float I
 	float InStartingMontagePosition, float InRootMotionScale)
 {
 	UMoverComponent* MoverComponent = GetMoverComponent();
-	if (!MoverComponent || !InMontage || InPlayRate == 0.0f)
-	{
-		return;
-	}
+	if (!MoverComponent || !InMontage || InPlayRate == 0.0f) return;
 
-	// Cancel previous SGM root motion when retriggering the same montage.
 	MoverComponent->CancelFeaturesWithTag(TAG_SyncGasMover_RootMotion, true);
 
 	TSharedPtr<FSGM_AnimRootMotionLayeredMove> AnimRootMotionMove = MakeShared<FSGM_AnimRootMotionLayeredMove>();
@@ -551,7 +488,6 @@ void USGM_MontageComponent::QueueRootMotionMove(UAnimMontage* InMontage, float I
 		: InStartingMontagePosition;
 
 	AnimRootMotionMove->DurationMs = (RemainingUnscaledMontageSeconds / FMath::Abs(InPlayRate)) * 1000.0f;
-
 	MoverComponent->QueueLayeredMove(AnimRootMotionMove);
 }
 
@@ -575,13 +511,16 @@ void USGM_MontageComponent::UpdateRootMotionControl(float DeltaSeconds)
 		return;
 	}
 
-	UpdateMontagePercentRelease();
-	UpdateBlockedContactResume();
+	if (ShouldDrivePredictedRootMotionControl())
+	{
+		UpdateMontagePercentRelease();
+		UpdateBlockedContactResume();
+	}
 }
 
 void USGM_MontageComponent::UpdateMontagePercentRelease()
 {
-	if (RootMotionReleasePercent < 0.0f || bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
+	if (!ShouldDrivePredictedRootMotionControl() || RootMotionReleasePercent < 0.0f || bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
 	{
 		return;
 	}
@@ -593,18 +532,12 @@ void USGM_MontageComponent::UpdateMontagePercentRelease()
 		? AnimInstance->GetActiveInstanceForMontage(RepMontageState.Montage)
 		: nullptr;
 
-	if (!MontageInstance || !RepMontageState.Montage)
-	{
-		return;
-	}
+	if (!MontageInstance || !RepMontageState.Montage) return;
 
 	const float MontageLength = FMath::Max(RepMontageState.Montage->GetPlayLength(), KINDA_SMALL_NUMBER);
 	const float MontageProgress = MontageInstance->GetPosition() / MontageLength;
 
-	if (MontageProgress < RootMotionReleasePercent)
-	{
-		return;
-	}
+	if (MontageProgress < RootMotionReleasePercent) return;
 
 	bRootMotionReleasedByPercent = true;
 	ContactBlockingActors.Reset();
@@ -615,10 +548,7 @@ void USGM_MontageComponent::UpdateMontagePercentRelease()
 
 void USGM_MontageComponent::UpdateBlockedContactResume()
 {
-	if (!bRootMotionBlockedByContact)
-	{
-		return;
-	}
+	if (!ShouldDrivePredictedRootMotionControl() || !bRootMotionBlockedByContact) return;
 
 	const AActor* OwnerActor = GetOwner();
 	const UCapsuleComponent* OwnerCapsule = GetOwnerCapsuleComponent();
@@ -634,7 +564,8 @@ void USGM_MontageComponent::UpdateBlockedContactResume()
 
 	for (auto It = ContactBlockingActors.CreateIterator(); It; ++It)
 	{
-		const AActor* BlockingActor = It->Get();
+		const TWeakObjectPtr<AActor> WeakActor = *It;
+		const AActor* BlockingActor = WeakActor.Get();
 		if (!BlockingActor || !IsActorWithinContactBlockAngle(BlockingActor))
 		{
 			It.RemoveCurrent();
@@ -657,21 +588,21 @@ void USGM_MontageComponent::UpdateBlockedContactResume()
 	SetContactRootMotionBlocked(ContactBlockingActors.Num() > 0);
 }
 
+bool USGM_MontageComponent::ShouldDrivePredictedRootMotionControl() const
+{
+	const AActor* OwnerActor = GetOwner();
+	return OwnerActor && (OwnerActor->HasAuthority() || OwnerActor->GetLocalRole() == ROLE_AutonomousProxy);
+}
+
 bool USGM_MontageComponent::IsActorWithinContactBlockAngle(const AActor* OtherActor) const
 {
 	const AActor* OwnerActor = GetOwner();
-	if (!OwnerActor || !OtherActor || OtherActor == OwnerActor)
-	{
-		return false;
-	}
+	if (!OwnerActor || !OtherActor || OtherActor == OwnerActor) return false;
 
 	FVector ToOther = OtherActor->GetActorLocation() - OwnerActor->GetActorLocation();
 	ToOther.Z = 0.0f;
 
-	if (ToOther.IsNearlyZero())
-	{
-		return true;
-	}
+	if (ToOther.IsNearlyZero()) return true;
 
 	const FVector OwnerForward = OwnerActor->GetActorForwardVector().GetSafeNormal2D();
 	const float MinForwardDot = FMath::Cos(FMath::DegreesToRadians(ContactBlockHalfAngleDegrees));
@@ -680,7 +611,7 @@ bool USGM_MontageComponent::IsActorWithinContactBlockAngle(const AActor* OtherAc
 
 void USGM_MontageComponent::RefreshInitialContactBlockState()
 {
-	if (!bEnableRootMotionContactBlocking || bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
+	if (!ShouldDrivePredictedRootMotionControl() || !bEnableRootMotionContactBlocking || bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
 	{
 		return;
 	}
@@ -688,10 +619,7 @@ void USGM_MontageComponent::RefreshInitialContactBlockState()
 	AActor* OwnerActor = GetOwner();
 	UCapsuleComponent* CapsuleComponent = GetOwnerCapsuleComponent();
 	UWorld* World = GetWorld();
-	if (!OwnerActor || !CapsuleComponent || !World)
-	{
-		return;
-	}
+	if (!OwnerActor || !CapsuleComponent || !World) return;
 
 	FCollisionObjectQueryParams ObjectQueryParams;
 	ObjectQueryParams.AddObjectTypesToQuery(ECC_Pawn);
@@ -726,15 +654,14 @@ void USGM_MontageComponent::RefreshInitialContactBlockState()
 
 void USGM_MontageComponent::SetContactRootMotionBlocked(bool bInBlocked)
 {
+	if (!ShouldDrivePredictedRootMotionControl()) return;
+
 	if (bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
 	{
 		bInBlocked = false;
 	}
 
-	if (bRootMotionBlockedByContact == bInBlocked)
-	{
-		return;
-	}
+	if (bRootMotionBlockedByContact == bInBlocked) return;
 
 	bRootMotionBlockedByContact = bInBlocked;
 	SetReplicatedRootMotionScale(bRootMotionBlockedByContact ? 0.0f : 1.0f);
@@ -743,16 +670,10 @@ void USGM_MontageComponent::SetContactRootMotionBlocked(bool bInBlocked)
 
 void USGM_MontageComponent::BindContactBlockingEvents()
 {
-	if (!bEnableRootMotionContactBlocking)
-	{
-		return;
-	}
+	if (!bEnableRootMotionContactBlocking || !ShouldDrivePredictedRootMotionControl()) return;
 
 	UCapsuleComponent* CapsuleComponent = GetOwnerCapsuleComponent();
-	if (!CapsuleComponent)
-	{
-		return;
-	}
+	if (!CapsuleComponent) return;
 
 	if (BoundContactCapsule && BoundContactCapsule != CapsuleComponent)
 	{
@@ -760,22 +681,15 @@ void USGM_MontageComponent::BindContactBlockingEvents()
 	}
 
 	BoundContactCapsule = CapsuleComponent;
-
-	// Pawn capsules commonly block each other, so hit events are the primary contact signal.
 	BoundContactCapsule->SetNotifyRigidBodyCollision(true);
 	BoundContactCapsule->OnComponentHit.AddUniqueDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleHit);
-
-	// Keep overlap support too for projects that use overlap-based pawn contact.
 	BoundContactCapsule->OnComponentBeginOverlap.AddUniqueDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleBeginOverlap);
 	BoundContactCapsule->OnComponentEndOverlap.AddUniqueDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleEndOverlap);
 }
 
 void USGM_MontageComponent::UnbindContactBlockingEvents()
 {
-	if (!BoundContactCapsule)
-	{
-		return;
-	}
+	if (!BoundContactCapsule) return;
 
 	BoundContactCapsule->OnComponentHit.RemoveDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleHit);
 	BoundContactCapsule->OnComponentBeginOverlap.RemoveDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleBeginOverlap);
@@ -786,7 +700,7 @@ void USGM_MontageComponent::UnbindContactBlockingEvents()
 void USGM_MontageComponent::OnOwnerCapsuleBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-	if (!bEnableRootMotionContactBlocking || bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
+	if (!ShouldDrivePredictedRootMotionControl() || !bEnableRootMotionContactBlocking || bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
 	{
 		return;
 	}
@@ -801,6 +715,8 @@ void USGM_MontageComponent::OnOwnerCapsuleBeginOverlap(UPrimitiveComponent* Over
 void USGM_MontageComponent::OnOwnerCapsuleEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
 {
+	if (!ShouldDrivePredictedRootMotionControl()) return;
+
 	ContactBlockingActors.Remove(OtherActor);
 	SetContactRootMotionBlocked(ContactBlockingActors.Num() > 0);
 }
@@ -808,7 +724,7 @@ void USGM_MontageComponent::OnOwnerCapsuleEndOverlap(UPrimitiveComponent* Overla
 void USGM_MontageComponent::OnOwnerCapsuleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
 {
-	if (!bEnableRootMotionContactBlocking || bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
+	if (!ShouldDrivePredictedRootMotionControl() || !bEnableRootMotionContactBlocking || bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
 	{
 		return;
 	}
@@ -829,10 +745,7 @@ bool USGM_MontageComponent::ApplyRootMotionScaleToCurrentMontage(float InRootMot
 		? AnimInstance->GetActiveInstanceForMontage(RepMontageState.Montage)
 		: nullptr;
 
-	if (!AnimInstance || !MontageInstance || !RepMontageState.Montage)
-	{
-		return false;
-	}
+	if (!AnimInstance || !MontageInstance || !RepMontageState.Montage) return false;
 
 	MontageInstance->PushDisableRootMotion();
 	QueueRootMotionMove(
@@ -850,21 +763,18 @@ void USGM_MontageComponent::SetReplicatedRootMotionScale(float InRootMotionScale
 	ApplyRootMotionScaleToCurrentMontage(ClampedRootMotionScale);
 
 	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor)
-	{
-		return;
-	}
+	if (!OwnerActor) return;
 
 	if (!OwnerActor->HasAuthority())
 	{
-		ServerSetReplicatedRootMotionScale(ClampedRootMotionScale);
+		if (OwnerActor->GetLocalRole() == ROLE_AutonomousProxy)
+		{
+			ServerSetReplicatedRootMotionScale(ClampedRootMotionScale);
+		}
 		return;
 	}
 
-	if (FMath::IsNearlyEqual(RepMontageState.RootMotionScale, ClampedRootMotionScale))
-	{
-		return;
-	}
+	if (FMath::IsNearlyEqual(RepMontageState.RootMotionScale, ClampedRootMotionScale)) return;
 
 	RepMontageState.RootMotionScale = ClampedRootMotionScale;
 	RepMontageState.RootMotionScaleSerial++;
@@ -873,7 +783,16 @@ void USGM_MontageComponent::SetReplicatedRootMotionScale(float InRootMotionScale
 void USGM_MontageComponent::ResetLocalRootMotionControlState()
 {
 	ContactBlockingActors.Reset();
-	SetContactRootMotionBlocked(false);
+
+	if (ShouldDrivePredictedRootMotionControl())
+	{
+		SetContactRootMotionBlocked(false);
+	}
+	else
+	{
+		bRootMotionBlockedByContact = false;
+	}
+
 	UnbindContactBlockingEvents();
 	bRootMotionReleasedByPercent = false;
 	RootMotionReleasePercent = -1.0f;
