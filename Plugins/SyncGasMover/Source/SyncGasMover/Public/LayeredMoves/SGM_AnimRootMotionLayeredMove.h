@@ -15,6 +15,14 @@ struct SYNCGASMOVER_API FSGM_AnimRootMotionLayeredMove : public FLayeredMove_Ani
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Mover)
 	float RootMotionScale = 1.0f;
 
+	// Prevent root motion from driving the capsule into a pawn in front of the owner.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Mover)
+	bool bStopRootMotionOnPawnContact = false;
+
+	// Half-angle of the forward contact cone. 40 means 40 degrees left/right.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Mover)
+	float PawnContactBlockHalfAngleDegrees = 40.0f;
+
 	virtual bool HasGameplayTag(FGameplayTag TagToFind, bool bExactMatch) const override;
 	virtual bool GenerateMove(const FMoverTickStartData& StartState, const FMoverTimeStep& TimeStep,
 		const UMoverComponent* MoverComp, UMoverBlackboard* SimBlackboard, FProposedMove& OutProposedMove) override;
