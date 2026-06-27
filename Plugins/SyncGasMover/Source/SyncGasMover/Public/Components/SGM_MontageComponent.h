@@ -1,7 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Animation/AnimInstance.h"
 #include "Components/ActorComponent.h"
+#include "GameFramework/Actor.h"
 #include "SGM_MontageComponent.generated.h"
 
 class UAnimMontage;
@@ -111,6 +113,18 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "SyncGasMover|Animation")
 	bool GetCanBlendUpperAndLowerBody() const { return bCanBlendUpperAndLowerBody; }
+
+	static USGM_MontageComponent* FindMontageComponentFromAnimInstance(const UAnimInstance* AnimInstance)
+	{
+		AActor* OwningActor = AnimInstance ? AnimInstance->GetOwningActor() : nullptr;
+		return OwningActor ? OwningActor->FindComponentByClass<USGM_MontageComponent>() : nullptr;
+	}
+
+	static bool GetCanBlendUpperAndLowerBodyFromAnimInstance(const UAnimInstance* AnimInstance)
+	{
+		const USGM_MontageComponent* MontageComponent = FindMontageComponentFromAnimInstance(AnimInstance);
+		return MontageComponent && MontageComponent->GetCanBlendUpperAndLowerBody();
+	}
 	
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Montage")
 	bool StartReplicatedMontage(UAnimMontage* InMontage, float InPlayRate = 1.0f,
