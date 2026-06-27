@@ -1,0 +1,27 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+using UnrealBuildTool;
+
+public class SyncGasMover : ModuleRules
+{
+	public SyncGasMover(ReadOnlyTargetRules Target) : base(Target)
+	{
+		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			"Core",
+			"CoreUObject",
+			"Engine",
+			"GameplayAbilities",
+			"GameplayTags",
+			"GameplayTasks",
+			"MotionWarping",
+			"Mover"
+		});
+
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+		});
+	}
+}

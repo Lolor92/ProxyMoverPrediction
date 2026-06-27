@@ -1,0 +1,50 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "{DC97168D-4491-DD20-FDCB-9399882F32F7}",
+	"Category": "",
+	"Description": "",
+	"Modules": [
+		{
+			"Name": "ProxyMoverPrediction",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "ModelingToolsEditorMode",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "Mover",
+			"Enabled": true
+		},
+		{
+			"Name": "MoverAnimNext",
+			"Enabled": true
+		},
+		{
+			"Name": "MoverIntegrations",
+			"Enabled": true
+		},
+		{
+			"Name": "NetworkPredictionExtras",
+			"Enabled": true
+		},
+		{
+			"Name": "MotionWarping",
+			"Enabled": true
+		},
+		{
+			"Name": "GameplayAbilities",
+			"Enabled": true
+		},
+		{
+			"Name": "SyncGasMover",
+			"Enabled": true
+		}
+	]
+}

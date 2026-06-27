@@ -1,0 +1,67 @@
+# =========================================================
+# Unreal generated folders
+# =========================================================
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+.vs/
+
+# =========================================================
+# Rider / Visual Studio / IDE files
+# =========================================================
+.idea/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.user
+*.rsuser
+
+# =========================================================
+# Build output / temporary files
+# =========================================================
+*.log
+*.tmp
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+
+# =========================================================
+# OS junk
+# =========================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================================================
+# Keep project code/config/plugin files
+# These lines make sure Git does NOT ignore them.
+# =========================================================
+!*.uproject
+!Source/
+!Source/**
+
+!Config/
+!Config/**
+
+!Plugins/
+!Plugins/**
+!Plugins/**/*.uplugin
+!Plugins/**/Source/
+!Plugins/**/Source/**
+!Plugins/**/Config/
+!Plugins/**/Config/**
+
+# =========================================================
+# Ignore generated plugin folders, but keep plugin source/config
+# =========================================================
+Plugins/**/Binaries/
+Plugins/**/Intermediate/
+Plugins/**/Saved/
