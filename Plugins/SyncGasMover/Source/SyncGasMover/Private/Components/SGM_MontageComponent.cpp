@@ -4,7 +4,6 @@
 #include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Engine/OverlapResult.h"
 #include "LayeredMoves/SGM_AnimRootMotionLayeredMove.h"
 #include "MoverComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -182,6 +181,9 @@ bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMonta
 	ResetLocalRootMotionControlState();
 	SetCanBlendUpperAndLowerBody(false);
 
+	BindContactBlockingEvents();
+	RefreshInitialContactBlockState();
+
 	ServerPlayReplicatedMontage(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
 	return true;
 }
@@ -256,13 +258,19 @@ void USGM_MontageComponent::SetRootMotionContactBlockingEnabled(bool bEnabled)
 {
 	bEnableRootMotionContactBlocking = bEnabled;
 
-	if (!bEnableRootMotionContactBlocking && bRootMotionBlockedByContact)
+	if (bEnableRootMotionContactBlocking)
 	{
-		bRootMotionBlockedByContact = false;
-		SetReplicatedRootMotionScale(1.0f);
+		BindContactBlockingEvents();
+		RefreshInitialContactBlockState();
+	}
+	else
+	{
+		ContactBlockingActors.Reset();
+		UnbindContactBlockingEvents();
+		SetContactRootMotionBlocked(false);
 	}
 
-	SetComponentTickEnabled(bEnableRootMotionContactBlocking || RootMotionReleasePercent >= 0.0f || RepMontageState.bIsPlaying);
+	SetComponentTickEnabled(RootMotionReleasePercent >= 0.0f || RepMontageState.bIsPlaying);
 }
 
 void USGM_MontageComponent::SetCanBlendUpperAndLowerBody(bool bInCanBlend)
@@ -329,6 +337,9 @@ bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, floa
 	// Critical: this changes even when the same montage is played again.
 	// That forces clients to treat it as a fresh play command.
 	RepMontageState.Serial++;
+
+	BindContactBlockingEvents();
+	RefreshInitialContactBlockState();
 
 	SetComponentTickEnabled(true);
 	return true;
@@ -440,6 +451,8 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 					RepMontageState.StartTimeSeconds, RepMontageState.StartSection);
 			}
 
+			BindContactBlockingEvents();
+			RefreshInitialContactBlockState();
 			SetComponentTickEnabled(true);
 		}
 	}
@@ -496,6 +509,12 @@ UMoverComponent* USGM_MontageComponent::GetMoverComponent() const
 	return OwnerActor ? OwnerActor->FindComponentByClass<UMoverComponent>() : nullptr;
 }
 
+UCapsuleComponent* USGM_MontageComponent::GetOwnerCapsuleComponent() const
+{
+	const AActor* OwnerActor = GetOwner();
+	return OwnerActor ? OwnerActor->FindComponentByClass<UCapsuleComponent>() : nullptr;
+}
+
 void USGM_MontageComponent::QueueRootMotionMove(UAnimMontage* InMontage, float InPlayRate,
 	float InStartingMontagePosition, float InRootMotionScale)
 {
@@ -549,7 +568,6 @@ void USGM_MontageComponent::UpdateRootMotionControl(float DeltaSeconds)
 	}
 
 	UpdateMontagePercentRelease();
-	UpdateContactRootMotionBlocking();
 }
 
 void USGM_MontageComponent::UpdateMontagePercentRelease()
@@ -580,94 +598,132 @@ void USGM_MontageComponent::UpdateMontagePercentRelease()
 	}
 
 	bRootMotionReleasedByPercent = true;
-	bRootMotionBlockedByContact = false;
+	ContactBlockingActors.Reset();
+	SetContactRootMotionBlocked(false);
 	SetCanBlendUpperAndLowerBody(true);
 	DisableRootMotionPredictedReplicated();
 }
 
-void USGM_MontageComponent::UpdateContactRootMotionBlocking()
+bool USGM_MontageComponent::IsActorWithinContactBlockAngle(const AActor* OtherActor) const
+{
+	const AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OtherActor || OtherActor == OwnerActor)
+	{
+		return false;
+	}
+
+	FVector ToOther = OtherActor->GetActorLocation() - OwnerActor->GetActorLocation();
+	ToOther.Z = 0.0f;
+
+	if (ToOther.IsNearlyZero())
+	{
+		return true;
+	}
+
+	const FVector OwnerForward = OwnerActor->GetActorForwardVector().GetSafeNormal2D();
+	const float MinForwardDot = FMath::Cos(FMath::DegreesToRadians(ContactBlockHalfAngleDegrees));
+	return FVector::DotProduct(OwnerForward, ToOther.GetSafeNormal()) >= MinForwardDot;
+}
+
+void USGM_MontageComponent::RefreshInitialContactBlockState()
 {
 	if (!bEnableRootMotionContactBlocking || bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
 	{
 		return;
 	}
 
-	const bool bShouldBlockRootMotion = HasBlockingPawnInFront();
-	if (bShouldBlockRootMotion == bRootMotionBlockedByContact)
+	UCapsuleComponent* CapsuleComponent = GetOwnerCapsuleComponent();
+	if (!CapsuleComponent)
 	{
 		return;
 	}
 
-	bRootMotionBlockedByContact = bShouldBlockRootMotion;
+	TArray<AActor*> OverlappingActors;
+	CapsuleComponent->GetOverlappingActors(OverlappingActors, APawn::StaticClass());
+
+	ContactBlockingActors.Reset();
+	for (AActor* OverlappingActor : OverlappingActors)
+	{
+		if (IsActorWithinContactBlockAngle(OverlappingActor))
+		{
+			ContactBlockingActors.Add(OverlappingActor);
+		}
+	}
+
+	SetContactRootMotionBlocked(ContactBlockingActors.Num() > 0);
+}
+
+void USGM_MontageComponent::SetContactRootMotionBlocked(bool bInBlocked)
+{
+	if (bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
+	{
+		bInBlocked = false;
+	}
+
+	if (bRootMotionBlockedByContact == bInBlocked)
+	{
+		return;
+	}
+
+	bRootMotionBlockedByContact = bInBlocked;
 	SetReplicatedRootMotionScale(bRootMotionBlockedByContact ? 0.0f : 1.0f);
 }
 
-bool USGM_MontageComponent::HasBlockingPawnInFront() const
+void USGM_MontageComponent::BindContactBlockingEvents()
 {
-	const AActor* OwnerActor = GetOwner();
-	const UWorld* World = GetWorld();
-	if (!OwnerActor || !World)
+	if (!bEnableRootMotionContactBlocking)
 	{
-		return false;
+		return;
 	}
 
-	const UCapsuleComponent* CapsuleComponent = OwnerActor->FindComponentByClass<UCapsuleComponent>();
+	UCapsuleComponent* CapsuleComponent = GetOwnerCapsuleComponent();
 	if (!CapsuleComponent)
 	{
-		return false;
+		return;
 	}
 
-	FCollisionObjectQueryParams ObjectQueryParams;
-	ObjectQueryParams.AddObjectTypesToQuery(ECC_Pawn);
-
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(SGMRootMotionContactBlocking), false, OwnerActor);
-
-	const FCollisionShape CollisionShape = FCollisionShape::MakeCapsule(
-		CapsuleComponent->GetScaledCapsuleRadius() + ContactBlockProbeInflation,
-		CapsuleComponent->GetScaledCapsuleHalfHeight() + ContactBlockProbeInflation);
-
-	TArray<FOverlapResult> Overlaps;
-	const bool bHasOverlap = World->OverlapMultiByObjectType(
-		Overlaps,
-		OwnerActor->GetActorLocation(),
-		OwnerActor->GetActorQuat(),
-		ObjectQueryParams,
-		CollisionShape,
-		QueryParams);
-
-	if (!bHasOverlap)
+	if (BoundContactCapsule && BoundContactCapsule != CapsuleComponent)
 	{
-		return false;
+		UnbindContactBlockingEvents();
 	}
 
-	const FVector OwnerLocation = OwnerActor->GetActorLocation();
-	const FVector OwnerForward = OwnerActor->GetActorForwardVector().GetSafeNormal2D();
-	const float MinForwardDot = FMath::Cos(FMath::DegreesToRadians(ContactBlockHalfAngleDegrees));
+	BoundContactCapsule = CapsuleComponent;
+	BoundContactCapsule->OnComponentBeginOverlap.AddUniqueDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleBeginOverlap);
+	BoundContactCapsule->OnComponentEndOverlap.AddUniqueDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleEndOverlap);
+}
 
-	for (const FOverlapResult& Overlap : Overlaps)
+void USGM_MontageComponent::UnbindContactBlockingEvents()
+{
+	if (!BoundContactCapsule)
 	{
-		const AActor* OtherActor = Overlap.GetActor();
-		if (!OtherActor || OtherActor == OwnerActor)
-		{
-			continue;
-		}
-
-		FVector ToOther = OtherActor->GetActorLocation() - OwnerLocation;
-		ToOther.Z = 0.0f;
-
-		if (ToOther.IsNearlyZero())
-		{
-			return true;
-		}
-
-		const float ForwardDot = FVector::DotProduct(OwnerForward, ToOther.GetSafeNormal());
-		if (ForwardDot >= MinForwardDot)
-		{
-			return true;
-		}
+		return;
 	}
 
-	return false;
+	BoundContactCapsule->OnComponentBeginOverlap.RemoveDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleBeginOverlap);
+	BoundContactCapsule->OnComponentEndOverlap.RemoveDynamic(this, &USGM_MontageComponent::OnOwnerCapsuleEndOverlap);
+	BoundContactCapsule = nullptr;
+}
+
+void USGM_MontageComponent::OnOwnerCapsuleBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	if (!bEnableRootMotionContactBlocking || bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
+	{
+		return;
+	}
+
+	if (IsActorWithinContactBlockAngle(OtherActor))
+	{
+		ContactBlockingActors.Add(OtherActor);
+		SetContactRootMotionBlocked(true);
+	}
+}
+
+void USGM_MontageComponent::OnOwnerCapsuleEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
+{
+	ContactBlockingActors.Remove(OtherActor);
+	SetContactRootMotionBlocked(ContactBlockingActors.Num() > 0);
 }
 
 bool USGM_MontageComponent::ApplyRootMotionScaleToCurrentMontage(float InRootMotionScale)
@@ -722,7 +778,9 @@ void USGM_MontageComponent::SetReplicatedRootMotionScale(float InRootMotionScale
 
 void USGM_MontageComponent::ResetLocalRootMotionControlState()
 {
+	ContactBlockingActors.Reset();
+	SetContactRootMotionBlocked(false);
+	UnbindContactBlockingEvents();
 	bRootMotionReleasedByPercent = false;
-	bRootMotionBlockedByContact = false;
 	RootMotionReleasePercent = -1.0f;
 }
