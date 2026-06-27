@@ -18,7 +18,6 @@ namespace
 
 	float NormalizeReleasePercent(float InReleasePercent)
 	{
-		// Accept both 0.5 and 50 as 50%.
 		const float NormalizedPercent = InReleasePercent > 1.0f
 			? InReleasePercent / 100.0f
 			: InReleasePercent;
@@ -263,6 +262,50 @@ void USGM_MontageComponent::SetRootMotionContactBlockingEnabled(bool bEnabled)
 	}
 
 	SetComponentTickEnabled(RootMotionReleasePercent >= 0.0f || RepMontageState.bIsPlaying || bRootMotionBlockedByContact);
+}
+
+bool USGM_MontageComponent::ShouldBlockMovementInputDuringRootMotion() const
+{
+	if (!RepMontageState.Montage || !RepMontageState.bIsPlaying)
+	{
+		return false;
+	}
+
+	if (RepMontageState.bRootMotionDisabled || bCanBlendUpperAndLowerBody)
+	{
+		return false;
+	}
+
+	return !bRootMotionReleasedByPercent;
+}
+
+bool USGM_MontageComponent::TryReleaseRootMotionForMovementInput()
+{
+	if (!RepMontageState.Montage || !RepMontageState.bIsPlaying)
+	{
+		return false;
+	}
+
+	if (ShouldBlockMovementInputDuringRootMotion())
+	{
+		return false;
+	}
+
+	if (!bRootMotionReleasedByPercent)
+	{
+		return false;
+	}
+
+	ContactBlockingActors.Reset();
+	SetContactRootMotionBlocked(false);
+	SetCanBlendUpperAndLowerBody(true);
+
+	if (RepMontageState.bRootMotionDisabled)
+	{
+		return true;
+	}
+
+	return DisableRootMotionPredictedReplicated();
 }
 
 void USGM_MontageComponent::SetCanBlendUpperAndLowerBody(bool bInCanBlend)
@@ -560,11 +603,11 @@ void USGM_MontageComponent::UpdateMontagePercentRelease()
 
 	if (MontageProgress < RootMotionReleasePercent) return;
 
+	// The release percent opens the movement-cancel window only.
+	// Root motion keeps playing until movement input calls TryReleaseRootMotionForMovementInput().
 	bRootMotionReleasedByPercent = true;
 	ContactBlockingActors.Reset();
 	SetContactRootMotionBlocked(false);
-	SetCanBlendUpperAndLowerBody(true);
-	DisableRootMotionPredictedReplicated();
 }
 
 void USGM_MontageComponent::UpdateBlockedContactResume()
