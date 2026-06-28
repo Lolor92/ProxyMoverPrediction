@@ -1,10 +1,8 @@
 #include "Components/SGM_ProxyPredictionComponent.h"
 
-#include "AbilitySystemBlueprintLibrary.h"
-#include "AbilitySystemComponent.h"
-#include "Abilities/GameplayAbilityTypes.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Components/SGM_MontageComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Pawn.h"
 #include "MotionWarpingComponent.h"
@@ -58,22 +56,21 @@ bool USGM_ProxyPredictionComponent::PlayPredictedReactionOnTargetProxy(AActor* T
 		return false;
 	}
 
-	TriggerReactionGameplayEventOnTarget(TargetActor, ReactionTag);
+	TriggerReactionMontageOnTarget(TargetActor, ReactionTag);
 
 	if (UWorld* World = GetWorld())
 	{
 		LastReactionTimeByTarget.FindOrAdd(TargetActor) = World->GetTimeSeconds();
 	}
 
-	UE_LOG(LogSGMProxyPrediction, Log, TEXT("PlayPredictedReaction success: Owner=%s Target=%s Tag=%s Montage=%s HasRootMotion=%d TriggerTag=%s"),
+	UE_LOG(LogSGMProxyPrediction, Log, TEXT("PlayPredictedReaction success: Owner=%s Target=%s Tag=%s Montage=%s HasRootMotion=%d"),
 		*GetNameSafe(GetOwner()), *GetNameSafe(TargetActor), *ReactionTag.ToString(),
-		*GetNameSafe(Reaction.Montage), Reaction.Montage ? Reaction.Montage->HasRootMotion() : false,
-		*Reaction.ReactionTriggerTag.ToString());
+		*GetNameSafe(Reaction.Montage), Reaction.Montage ? Reaction.Montage->HasRootMotion() : false);
 
 	return true;
 }
 
-bool USGM_ProxyPredictionComponent::TriggerReactionGameplayEventOnTarget(AActor* TargetActor, FGameplayTag ReactionTag)
+bool USGM_ProxyPredictionComponent::TriggerReactionMontageOnTarget(AActor* TargetActor, FGameplayTag ReactionTag)
 {
 	if (!ReactionData || !ReactionTag.IsValid())
 	{
@@ -89,14 +86,14 @@ bool USGM_ProxyPredictionComponent::TriggerReactionGameplayEventOnTarget(AActor*
 	AActor* OwnerActor = GetOwner();
 	if (OwnerActor && OwnerActor->HasAuthority())
 	{
-		return SendReactionGameplayEventToTarget(TargetActor, ReactionTag, Reaction);
+		return PlayReactionMontageOnTargetServer(TargetActor, ReactionTag, Reaction);
 	}
 
-	ServerTriggerReactionGameplayEventOnTarget(TargetActor, ReactionTag);
-	return Reaction.ReactionTriggerTag.IsValid();
+	ServerTriggerReactionMontageOnTarget(TargetActor, ReactionTag);
+	return Reaction.Montage != nullptr;
 }
 
-void USGM_ProxyPredictionComponent::ServerTriggerReactionGameplayEventOnTarget_Implementation(AActor* TargetActor,
+void USGM_ProxyPredictionComponent::ServerTriggerReactionMontageOnTarget_Implementation(AActor* TargetActor,
 	FGameplayTag ReactionTag)
 {
 	if (!ReactionData || !ReactionTag.IsValid())
@@ -110,45 +107,39 @@ void USGM_ProxyPredictionComponent::ServerTriggerReactionGameplayEventOnTarget_I
 		return;
 	}
 
-	SendReactionGameplayEventToTarget(TargetActor, ReactionTag, Reaction);
+	PlayReactionMontageOnTargetServer(TargetActor, ReactionTag, Reaction);
 }
 
-bool USGM_ProxyPredictionComponent::SendReactionGameplayEventToTarget(AActor* TargetActor, FGameplayTag ReactionTag,
+bool USGM_ProxyPredictionComponent::PlayReactionMontageOnTargetServer(AActor* TargetActor, FGameplayTag ReactionTag,
 	const FSGM_ReactionDataEntry& Reaction) const
 {
-	if (!TargetActor || !Reaction.ReactionTriggerTag.IsValid())
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority() || !TargetActor || !Reaction.Montage)
 	{
 		return false;
 	}
 
-	FGameplayEventData EventData;
-	EventData.EventTag = Reaction.ReactionTriggerTag;
-	EventData.Instigator = GetOwner();
-	EventData.Target = TargetActor;
-	EventData.OptionalObject = ReactionData;
-	EventData.OptionalObject2 = Reaction.Montage;
-
-	if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor))
+	USGM_MontageComponent* TargetMontageComponent = TargetActor->FindComponentByClass<USGM_MontageComponent>();
+	if (!TargetMontageComponent)
 	{
-		// Supports abilities configured with Trigger Source = "When Tag Is Added".
-		// Remove it immediately so the same reaction can fire again on the next hit.
-		TargetASC->AddLooseGameplayTag(Reaction.ReactionTriggerTag);
-		TargetASC->RemoveLooseGameplayTag(Reaction.ReactionTriggerTag);
-	}
-	else
-	{
-		UE_LOG(LogSGMProxyPrediction, Warning, TEXT("Reaction trigger failed: no ASC Target=%s TriggerTag=%s"),
-			*GetNameSafe(TargetActor), *Reaction.ReactionTriggerTag.ToString());
+		UE_LOG(LogSGMProxyPrediction, Warning, TEXT("Server reaction montage failed: Target=%s has no SGM_MontageComponent Tag=%s Montage=%s"),
+			*GetNameSafe(TargetActor), *ReactionTag.ToString(), *GetNameSafe(Reaction.Montage));
 		return false;
 	}
 
-	// Also send a GameplayEvent so abilities configured with Trigger Source = Gameplay Event can use payload data.
-	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(TargetActor, Reaction.ReactionTriggerTag, EventData);
+	const float StartPosition = GetReactionStartPosition(Reaction);
+	const bool bStarted = TargetMontageComponent->StartReplicatedMontage(
+		Reaction.Montage,
+		Reaction.PlayRate,
+		StartPosition,
+		Reaction.StartSection);
 
-	UE_LOG(LogSGMProxyPrediction, Log, TEXT("Reaction trigger sent: Owner=%s Target=%s ReactionTag=%s TriggerTag=%s Data=%s Montage=%s"),
-		*GetNameSafe(GetOwner()), *GetNameSafe(TargetActor), *ReactionTag.ToString(),
-		*Reaction.ReactionTriggerTag.ToString(), *GetNameSafe(ReactionData), *GetNameSafe(Reaction.Montage));
-	return true;
+	UE_LOG(LogSGMProxyPrediction, Log, TEXT("Server reaction montage %s: Owner=%s Target=%s Tag=%s Montage=%s Start=%.3f PlayRate=%.3f Section=%s"),
+		bStarted ? TEXT("started") : TEXT("failed"),
+		*GetNameSafe(OwnerActor), *GetNameSafe(TargetActor), *ReactionTag.ToString(),
+		*GetNameSafe(Reaction.Montage), StartPosition, Reaction.PlayRate, *Reaction.StartSection.ToString());
+
+	return bStarted;
 }
 
 bool USGM_ProxyPredictionComponent::CanPlayPredictedReactionOnTargetProxy(AActor* TargetActor,
@@ -185,6 +176,7 @@ bool USGM_ProxyPredictionComponent::CanPlayPredictedReactionOnTargetProxy(AActor
 		return false;
 	}
 
+	// This is proxy prediction, so never drive the local player's own pawn as the target here.
 	const APawn* TargetPawn = Cast<APawn>(TargetActor);
 	if (TargetPawn && TargetPawn->IsLocallyControlled())
 	{
