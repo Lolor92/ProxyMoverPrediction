@@ -283,6 +283,7 @@ bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMonta
 	RepMontageState.StartTimeSeconds = InStartTimeSeconds;
 	RepMontageState.StartSection = InStartSection;
 	RepMontageState.bIsPlaying = true;
+	bIgnoreNextReplicatedStopForPredictedStart = true;
 	RepMontageState.bRootMotionDisabled = false;
 	RepMontageState.RootMotionScale = 1.0f;
 	ResetLocalRootMotionControlState();
@@ -611,7 +612,23 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 
 		if (!RepMontageState.bIsPlaying)
 		{
-			if (RepMontageState.Montage && AnimInstance->Montage_IsPlaying(RepMontageState.Montage))
+			const AActor* OwnerActor = GetOwner();
+			const bool bIsAutonomousProxy = OwnerActor && OwnerActor->GetLocalRole() == ROLE_AutonomousProxy;
+			const bool bLocalSameMontageStillPlaying = RepMontageState.Montage
+				&& AnimInstance->Montage_IsPlaying(RepMontageState.Montage);
+
+			// At high ping, a client can predict the next attack immediately after the local montage ends,
+			// then receive the previous attack's replicated stop before the server's new play command.
+			// Do not let that stale stop kill the freshly predicted local montage.
+			if (bIsAutonomousProxy && bIgnoreNextReplicatedStopForPredictedStart && bLocalSameMontageStillPlaying)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG OnRep STOP_STALE_AFTER_PREDICT_REJECT %s Montage=%s Serial=%d LastSerial=%d"),
+					*SGMLogActorState(this, OwnerActor), *GetNameSafe(RepMontageState.Montage),
+					RepMontageState.Serial, LastAppliedMontageSerial);
+				return;
+			}
+
+			if (RepMontageState.Montage && bLocalSameMontageStillPlaying)
 			{
 				AnimInstance->Montage_Stop(RepMontageState.Montage->GetDefaultBlendOutTime(), RepMontageState.Montage);
 			}
@@ -623,6 +640,8 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 
 		if (RepMontageState.Montage)
 		{
+			bIgnoreNextReplicatedStopForPredictedStart = false;
+
 			const AActor* OwnerActor = GetOwner();
 			const bool bIsAutonomousProxy = OwnerActor && OwnerActor->GetLocalRole() == ROLE_AutonomousProxy;
 			const bool bAlreadyPlayingSameMontage = AnimInstance->Montage_IsPlaying(RepMontageState.Montage);
@@ -1100,4 +1119,5 @@ void USGM_MontageComponent::ResetLocalRootMotionControlState()
 	bRootMotionReleasedByPercent = false;
 	RootMotionReleasePercent = -1.0f;
 	bLocalRootMotionDisableRequested = false;
+	bIgnoreNextReplicatedStopForPredictedStart = false;
 }

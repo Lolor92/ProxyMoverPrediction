@@ -219,4 +219,5 @@ private:
 	bool bRootMotionReleasedByPercent = false;
 	bool bRootMotionBlockedByContact = false;
 	bool bLocalRootMotionDisableRequested = false;
+	bool bIgnoreNextReplicatedStopForPredictedStart = false;
 };
