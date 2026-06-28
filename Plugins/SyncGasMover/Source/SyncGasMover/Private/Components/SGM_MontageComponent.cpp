@@ -541,6 +541,12 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 			}
 
 			SetComponentTickEnabled(true);
+
+			// This montage command already established the current root-motion move.
+			// Do not immediately consume the scale/disable serials from the same OnRep packet,
+			// or an autonomous proxy can cancel its predicted move and queue a second move when the ack arrives.
+			LastAppliedRootMotionScaleSerial = RepMontageState.RootMotionScaleSerial;
+			LastAppliedDisableRootMotionSerial = RepMontageState.DisableRootMotionSerial;
 		}
 	}
 
