@@ -8,6 +8,8 @@ public class SyncGasMover : ModuleRules
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
+		PrivateDefinitions.Add("SGM_SILENCE_MONTAGE_COMPONENT_LOGS=1");
+
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
 			"Core",
