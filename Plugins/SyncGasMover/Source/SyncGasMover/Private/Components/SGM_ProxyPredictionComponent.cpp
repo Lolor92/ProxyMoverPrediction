@@ -1,11 +1,11 @@
 #include "Components/SGM_ProxyPredictionComponent.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Abilities/GameplayAbilityTypes.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Pawn.h"
-#include "GameplayAbilityTypes.h"
 #include "MotionWarpingComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogSGMProxyPrediction, Log, All);
