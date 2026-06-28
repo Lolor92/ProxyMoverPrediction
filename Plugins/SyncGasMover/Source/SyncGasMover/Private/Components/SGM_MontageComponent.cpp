@@ -283,10 +283,14 @@ bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMonta
 	RepMontageState.StartTimeSeconds = InStartTimeSeconds;
 	RepMontageState.StartSection = InStartSection;
 	RepMontageState.bIsPlaying = true;
-	bIgnoreNextReplicatedStopForPredictedStart = true;
 	RepMontageState.bRootMotionDisabled = false;
 	RepMontageState.RootMotionScale = 1.0f;
 	ResetLocalRootMotionControlState();
+
+	// ResetLocalRootMotionControlState clears prediction latches, so set this after reset.
+	// It protects a freshly predicted montage from a late replicated stop from the previous montage.
+	bIgnoreNextReplicatedStopForPredictedStart = true;
+
 	SetCanBlendUpperAndLowerBody(false);
 
 	BindContactBlockingEvents();
