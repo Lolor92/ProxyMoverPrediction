@@ -99,13 +99,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
 	bool IsRootMotionContactBlocked() const { return bRootMotionBlockedByContact; }
 
-	// Use this in your Move input before Add Movement Input. True means movement input should be ignored,
-	// but look/ability input can still run.
 	UFUNCTION(BlueprintPure, Category = "SyncGasMover|Root Motion")
 	bool ShouldBlockMovementInputDuringRootMotion() const;
 
-	// Call this from Move input after ShouldBlockMovementInputDuringRootMotion returns false.
-	// If the release percent has been reached, this disables root motion and enables upper/lower blend locally now.
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
 	bool TryReleaseRootMotionForMovementInput();
 
@@ -224,3 +220,8 @@ private:
 	bool bLocalRootMotionDisableRequested = false;
 	bool bIgnoreNextReplicatedStopForPredictedStart = false;
 };
+
+#if SGM_SILENCE_MONTAGE_COMPONENT_LOGS
+#undef UE_LOG
+#define UE_LOG(...) do { } while (false)
+#endif
