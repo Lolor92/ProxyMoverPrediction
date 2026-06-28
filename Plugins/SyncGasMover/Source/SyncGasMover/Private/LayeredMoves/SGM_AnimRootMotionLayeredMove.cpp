@@ -170,7 +170,6 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 			if (!SweepDelta.IsNearlyZero())
 			{
 				const FVector EndLocation = StartLocation + SweepDelta;
-				const FVector EndLocation = StartLocation + SweepDelta;
 				const FCollisionShape SweepShape = FCollisionShape::MakeCapsule(
 					OwnerCapsule->GetScaledCapsuleRadius(),
 					OwnerCapsule->GetScaledCapsuleHalfHeight());
