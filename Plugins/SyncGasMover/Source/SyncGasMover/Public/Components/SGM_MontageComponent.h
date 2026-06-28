@@ -175,6 +175,7 @@ protected:
 
 private:
 	void ResolveMeshComponent();
+	void DisplayLocalPingDebug() const;
 	UMoverComponent* GetMoverComponent() const;
 	UCapsuleComponent* GetOwnerCapsuleComponent() const;
 	void QueueRootMotionMove(UAnimMontage* InMontage, float InPlayRate, float InStartingMontagePosition,

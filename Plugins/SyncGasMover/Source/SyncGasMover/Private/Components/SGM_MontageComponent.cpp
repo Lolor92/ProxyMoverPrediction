@@ -5,7 +5,9 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/OverlapResult.h"
+#include "Engine/Engine.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerState.h"
 #include "LayeredMoves/SGM_AnimRootMotionLayeredMove.h"
 #include "MoverComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -60,13 +62,59 @@ void USGM_MontageComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	ResolveMeshComponent();
+
+#if !UE_BUILD_SHIPPING
+	// Keep ticking in development/test builds so the lightweight ping readout stays visible
+	// without using stat net.
+	SetComponentTickEnabled(true);
+#endif
 }
 
 void USGM_MontageComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	DisplayLocalPingDebug();
 	UpdateRootMotionControl(DeltaTime);
+}
+
+
+void USGM_MontageComponent::DisplayLocalPingDebug() const
+{
+#if !UE_BUILD_SHIPPING
+	if (!GEngine) return;
+
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn || !OwnerPawn->IsLocallyControlled()) return;
+
+	const APlayerState* PlayerState = OwnerPawn->GetPlayerState();
+	const float PingMs = PlayerState ? static_cast<float>(PlayerState->GetCompressedPing()) * 4.0f : 0.0f;
+
+	const TCHAR* NetModeName = TEXT("Unknown");
+	switch (GetNetMode())
+	{
+	case NM_Standalone:
+		NetModeName = TEXT("Standalone");
+		break;
+	case NM_DedicatedServer:
+		NetModeName = TEXT("DedicatedServer");
+		break;
+	case NM_ListenServer:
+		NetModeName = TEXT("ListenServer");
+		break;
+	case NM_Client:
+		NetModeName = TEXT("Client");
+		break;
+	default:
+		break;
+	}
+
+	GEngine->AddOnScreenDebugMessage(
+		912345,
+		0.05f,
+		FColor::Cyan,
+		FString::Printf(TEXT("Ping: %.0f ms | NetMode: %s"), PingMs, NetModeName));
+#endif
 }
 
 bool USGM_MontageComponent::PlayMontageLocal(UAnimMontage* InMontage, float InPlayRate, float InStartTimeSeconds,
@@ -653,7 +701,11 @@ void USGM_MontageComponent::UpdateRootMotionControl(float DeltaSeconds)
 	if (!RepMontageState.Montage || !RepMontageState.bIsPlaying)
 	{
 		ResetLocalRootMotionControlState();
+#if !UE_BUILD_SHIPPING
+		SetComponentTickEnabled(true);
+#else
 		SetComponentTickEnabled(false);
+#endif
 		return;
 	}
 
@@ -681,7 +733,11 @@ void USGM_MontageComponent::UpdateRootMotionControl(float DeltaSeconds)
 
 		ResetLocalRootMotionControlState();
 		SetCanBlendUpperAndLowerBody(false);
+#if !UE_BUILD_SHIPPING
+		SetComponentTickEnabled(true);
+#else
 		SetComponentTickEnabled(false);
+#endif
 		return;
 	}
 
