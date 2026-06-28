@@ -825,14 +825,35 @@ void USGM_MontageComponent::SetContactRootMotionBlocked(bool bInBlocked)
 {
 	if (!ShouldDrivePredictedRootMotionControl()) return;
 
-	if (bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled)
+	const bool bRootMotionReleasedOrDisabled = bRootMotionReleasedByPercent || RepMontageState.bRootMotionDisabled;
+	if (bRootMotionReleasedOrDisabled)
 	{
-		bInBlocked = false;
+		// Release/disable owns the root-motion scale now.
+		// Do not restore Scale=1 when clearing contact block, or high-ping correction can flip
+		// between Scale=0 and Scale=1 and cause visible back-and-forth vibration.
+		ContactBlockingActors.Reset();
+
+		if (bRootMotionBlockedByContact)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG ContactBlock CLEAR_WITHOUT_SCALE_RESTORE %s Montage=%s Released=%d Disabled=%d Scale=%.3f"),
+				*SGMLogActorState(this, GetOwner()), *GetNameSafe(RepMontageState.Montage),
+				bRootMotionReleasedByPercent, RepMontageState.bRootMotionDisabled, RepMontageState.RootMotionScale);
+
+			bRootMotionBlockedByContact = false;
+		}
+
+		SetComponentTickEnabled(RootMotionReleasePercent >= 0.0f || RepMontageState.bIsPlaying || bRootMotionBlockedByContact);
+		return;
 	}
 
 	if (bRootMotionBlockedByContact == bInBlocked) return;
 
 	bRootMotionBlockedByContact = bInBlocked;
+
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG ContactBlock SCALE_CHANGE %s Montage=%s Blocked=%d NewScale=%.3f"),
+		*SGMLogActorState(this, GetOwner()), *GetNameSafe(RepMontageState.Montage),
+		bRootMotionBlockedByContact, bRootMotionBlockedByContact ? 0.0f : 1.0f);
+
 	SetReplicatedRootMotionScale(bRootMotionBlockedByContact ? 0.0f : 1.0f);
 	SetComponentTickEnabled(RootMotionReleasePercent >= 0.0f || RepMontageState.bIsPlaying || bRootMotionBlockedByContact);
 }
