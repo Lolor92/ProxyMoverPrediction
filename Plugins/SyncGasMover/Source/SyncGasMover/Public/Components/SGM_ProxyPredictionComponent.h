@@ -44,6 +44,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Reaction")
 	bool PlayPredictedReactionOnTargetProxy(AActor* TargetActor, FGameplayTag ReactionTag);
 
+	// Server-authoritative path. Sends ReactionTriggerTag as a GameplayEvent to the target ASC.
+	// The target must already have an ability granted that is triggered by this gameplay event tag.
+	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Reaction")
+	bool TriggerReactionGameplayEventOnTarget(AActor* TargetActor, FGameplayTag ReactionTag);
+
+	UFUNCTION(Server, Reliable)
+	void ServerTriggerReactionGameplayEventOnTarget(AActor* TargetActor, FGameplayTag ReactionTag);
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SyncGasMover|Reaction")
 	TObjectPtr<USGM_ReactionData> ReactionData = nullptr;
@@ -51,6 +59,7 @@ protected:
 private:
 	bool CanPlayPredictedReactionOnTargetProxy(AActor* TargetActor, const FSGM_ReactionDataEntry& Reaction) const;
 	bool PlayReactionMontageOnActor(AActor* TargetActor, const FSGM_ReactionDataEntry& Reaction);
+	bool SendReactionGameplayEventToTarget(AActor* TargetActor, FGameplayTag ReactionTag, const FSGM_ReactionDataEntry& Reaction) const;
 	float GetReactionStartPosition(const FSGM_ReactionDataEntry& Reaction) const;
 	void StartPredictedProxyRootMotion(AActor* TargetActor, const FSGM_ReactionDataEntry& Reaction,
 		float StartPosition);
