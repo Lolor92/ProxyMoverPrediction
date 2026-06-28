@@ -2,6 +2,7 @@
 
 #include "Animation/SGM_UpperLowerBlendProviderInterface.h"
 #include "Components/ActorComponent.h"
+#include "Debug/SGM_DebugLog.h"
 #include "GameFramework/Actor.h"
 
 void USGM_MoverAnimInstance::NativeInitializeAnimation()
@@ -25,8 +26,15 @@ void USGM_MoverAnimInstance::UpdateCanBlendUpperAndLowerBody()
 		return;
 	}
 
+	const bool bOldValue = bCanBlendUpperAndLowerBody;
 	bCanBlendUpperAndLowerBody = bNewValue;
 	bHasCachedCanBlendUpperAndLowerBody = true;
+
+	SGM_BLEND_BOOL_LOG(TEXT("SGM_BLEND_BOOL AnimInstance=%s Owner=%s CanBlendUpperAndLowerBody %d -> %d"),
+		*GetNameSafe(this),
+		*GetNameSafe(GetOwningActor()),
+		bOldValue,
+		bCanBlendUpperAndLowerBody);
 }
 
 bool USGM_MoverAnimInstance::ReadCanBlendUpperAndLowerBodyFromOwner() const
