@@ -244,6 +244,32 @@ bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMonta
 	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG StartReplicatedMontage ENTER %s Montage=%s Start=%.3f PlayRate=%.3f OldSerial=%d"),
 		*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), InStartTimeSeconds, InPlayRate, RepMontageState.Serial);
 
+	ResolveMeshComponent();
+	if (MontageMeshComponent)
+	{
+		if (UAnimInstance* AnimInstance = MontageMeshComponent->GetAnimInstance())
+		{
+			if (FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(InMontage))
+			{
+				constexpr float DuplicatePredictedPlayRejectWindowSeconds = 0.75f;
+				const float CurrentMontagePosition = MontageInstance->GetPosition();
+
+				if (RepMontageState.bIsPlaying
+					&& RepMontageState.Montage == InMontage
+					&& FMath::IsNearlyEqual(RepMontageState.PlayRate, InPlayRate)
+					&& FMath::IsNearlyEqual(RepMontageState.StartTimeSeconds, InStartTimeSeconds)
+					&& RepMontageState.StartSection == InStartSection
+					&& CurrentMontagePosition <= DuplicatePredictedPlayRejectWindowSeconds)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG StartReplicatedMontage LOCAL_DUPLICATE_REJECT %s Montage=%s Pos=%.3f Window=%.3f Serial=%d"),
+						*SGMLogActorState(this, OwnerActor), *GetNameSafe(InMontage),
+						CurrentMontagePosition, DuplicatePredictedPlayRejectWindowSeconds, RepMontageState.Serial);
+					return true;
+				}
+			}
+		}
+	}
+
 	const bool bPlayedLocally = PlayMontageLocal(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
 	if (!bPlayedLocally)
 	{
@@ -444,6 +470,32 @@ bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, floa
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return false;
 	if (!InMontage) return false;
+
+	ResolveMeshComponent();
+	if (MontageMeshComponent)
+	{
+		if (UAnimInstance* AnimInstance = MontageMeshComponent->GetAnimInstance())
+		{
+			if (FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(InMontage))
+			{
+				constexpr float DuplicatePredictedPlayRejectWindowSeconds = 0.75f;
+				const float CurrentMontagePosition = MontageInstance->GetPosition();
+
+				if (RepMontageState.bIsPlaying
+					&& RepMontageState.Montage == InMontage
+					&& FMath::IsNearlyEqual(RepMontageState.PlayRate, InPlayRate)
+					&& FMath::IsNearlyEqual(RepMontageState.StartTimeSeconds, InStartTimeSeconds)
+					&& RepMontageState.StartSection == InStartSection
+					&& CurrentMontagePosition <= DuplicatePredictedPlayRejectWindowSeconds)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG StartReplicatedMontage AUTH_DUPLICATE_REJECT %s Montage=%s Pos=%.3f Window=%.3f Serial=%d"),
+						*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage),
+						CurrentMontagePosition, DuplicatePredictedPlayRejectWindowSeconds, RepMontageState.Serial);
+					return true;
+				}
+			}
+		}
+	}
 
 	const bool bPlayedLocally = PlayMontageLocal(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
 	if (!bPlayedLocally) return false;
