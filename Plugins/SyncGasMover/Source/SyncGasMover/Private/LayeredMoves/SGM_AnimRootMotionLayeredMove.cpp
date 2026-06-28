@@ -150,11 +150,6 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 
 				if (bStickyStillClose && bStickyStillInCone)
 				{
-					UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG RootMotionMove CONTACT_MEMORY_BLOCK %s Montage=%s Hit=%s BaseMs=%.3f Extract=%.3f->%.3f Delta=%s Dist=%.3f MaxDist=%.3f HalfAngle=%.3f"),
-						*SGMLayeredMoveActorState(OwnerActor), *GetNameSafe(MontageState.Montage), *GetNameSafe(StickyActor),
-						TimeStep.BaseSimTimeMs, ExtractionStartPosition, ExtractionEndPosition,
-						*ScaledTranslation.ToString(), ToStickyActor.Size(), MaxStickyDistance, PawnContactBlockHalfAngleDegrees);
-
 					ScaledTranslation = FVector::ZeroVector;
 					ScaledRotationVector = FVector::ZeroVector;
 				}
@@ -227,16 +222,9 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 		OutProposedMove.AngularVelocityDegrees = FMath::RadiansToDegrees(ScaledRotationVector / DeltaSeconds);
 	}
 
-	if (bNearMontageEnd || TimeStep.bIsResimulating || ScaledTranslation.IsNearlyZero())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG RootMotionMove GENERATE %s Montage=%s Resim=%d BaseMs=%.3f StartMs=%.3f StepMs=%.3f Extract=%.3f->%.3f Len=%.3f LocalDelta=%s WorldDelta=%s Scale=%.3f MixMode=%d OutVel=%s SimLoc=%s"),
-			*SGMLayeredMoveActorState(OwnerActor), *GetNameSafe(MontageState.Montage), TimeStep.bIsResimulating,
-			TimeStep.BaseSimTimeMs, StartSimTimeMs, TimeStep.StepMs,
-			ExtractionStartPosition, ExtractionEndPosition, MontageLength,
-			*LocalRootMotion.GetTranslation().ToString(), *ScaledTranslation.ToString(),
-			RootMotionScale, static_cast<int32>(OutProposedMove.MixMode),
-			*OutProposedMove.LinearVelocity.ToString(), *SyncState->GetLocation_WorldSpace().ToString());
-	}
+	// Do not log every generated root-motion step.
+	// During high-ping resimulation this path can run hundreds of times, and Warning log spam
+	// can stall the editor/output-log UI badly enough to create more resim jitter.
 
 	MontageState.CurrentPosition = ExtractionStartPosition;
 	return true;
