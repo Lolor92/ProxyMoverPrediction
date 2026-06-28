@@ -575,6 +575,14 @@ void USGM_MontageComponent::UpdateRootMotionControl(float DeltaSeconds)
 	UAnimInstance* AnimInstance = MontageMeshComponent ? MontageMeshComponent->GetAnimInstance() : nullptr;
 	if (!AnimInstance || !AnimInstance->Montage_IsPlaying(RepMontageState.Montage))
 	{
+		// Natural montage end must clear the tracked playing state too.
+		// Otherwise ShouldBlockMovementInputDuringRootMotion() keeps blocking after the animation is gone.
+		RepMontageState.bIsPlaying = false;
+		if (AActor* OwnerActor = GetOwner(); OwnerActor && OwnerActor->HasAuthority())
+		{
+			RepMontageState.Serial++;
+		}
+
 		ResetLocalRootMotionControlState();
 		SetCanBlendUpperAndLowerBody(false);
 		SetComponentTickEnabled(false);

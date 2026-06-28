@@ -1,0 +1,234 @@
+﻿#include "Notifies/SGM_PredictedCollisionNotifyState.h"
+#include "Components/SGM_ProxyPredictionComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/World.h"
+#include "GameFramework/Pawn.h"
+
+void USGM_PredictedCollisionNotifyState::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
+	float TotalDuration, const FAnimNotifyEventReference& EventReference)
+{
+	Super::NotifyBegin(MeshComp, Animation, TotalDuration, EventReference);
+
+	if (!MeshComp) return;
+
+	// A new notify window means a new swing/hit window, so clear the per-target hit list.
+	FSGM_PredictedCollisionRuntimeWindow& Window = ActiveWindowsByMesh.FindOrAdd(MeshComp);
+	Window.ProcessedTargets.Reset();
+
+	AActor* OwnerActor = MeshComp->GetOwner();
+	if (!ShouldRunCollision(OwnerActor)) return;
+
+	FTransform CurrentTransform;
+	if (!BuildTraceTransform(MeshComp, CurrentTransform)) return;
+
+	// Store the first transform. Ticks will sweep from this position to the next position.
+	PreviousTransforms.Add(MeshComp, CurrentTransform);
+}
+
+void USGM_PredictedCollisionNotifyState::NotifyTick(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
+	float FrameDeltaTime, const FAnimNotifyEventReference& EventReference)
+{
+	Super::NotifyTick(MeshComp, Animation, FrameDeltaTime, EventReference);
+
+	if (!MeshComp) return;
+
+	FTransform* PreviousTransform = PreviousTransforms.Find(MeshComp);
+	if (!PreviousTransform) return;
+
+	FTransform CurrentTransform;
+	if (!BuildTraceTransform(MeshComp, CurrentTransform)) return;
+
+	SweepCollision(MeshComp, *PreviousTransform, CurrentTransform);
+
+	// The next tick starts from where this tick ended.
+	*PreviousTransform = CurrentTransform;
+}
+
+void USGM_PredictedCollisionNotifyState::NotifyEnd(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
+	const FAnimNotifyEventReference& EventReference)
+{
+	Super::NotifyEnd(MeshComp, Animation, EventReference);
+
+	if (!MeshComp) return;
+
+	PreviousTransforms.Remove(MeshComp);
+	ActiveWindowsByMesh.Remove(MeshComp);
+}
+
+FString USGM_PredictedCollisionNotifyState::GetNotifyName_Implementation() const
+{
+	return TEXT("PredictedCollisionNotify");
+}
+
+void USGM_PredictedCollisionNotifyState::HandlePredictedCollisionHit(AActor* OwningActor, AActor* HitActor,
+	const FHitResult& HitResult)
+{
+	if (bPlayPredictedReactionOnClient && PredictedReactionTag.IsValid())
+	{
+		// The notify only carries the tag. The component owns the rules for whether a proxy can be animated locally.
+		if (USGM_ProxyPredictionComponent* PredictionComponent =
+			OwningActor ? OwningActor->FindComponentByClass<USGM_ProxyPredictionComponent>() : nullptr)
+		{
+			PredictionComponent->PlayPredictedReactionOnTargetProxy(HitActor, PredictedReactionTag);
+		}
+	}
+
+	// Keep the Blueprint hook for hit effects, logs, and quick iteration.
+	OnPredictedCollisionHit(OwningActor, HitActor, HitResult, PredictedReactionTag);
+}
+
+bool USGM_PredictedCollisionNotifyState::ShouldRunCollision(const AActor* OwnerActor) const
+{
+	if (!OwnerActor) return false;
+
+	// Server runs the authoritative collision.
+	if (OwnerActor->HasAuthority()) return true;
+
+	// Owning client runs the same sweep locally for instant feedback against proxy targets.
+	const APawn* OwnerPawn = Cast<APawn>(OwnerActor);
+	return OwnerPawn && OwnerPawn->IsLocallyControlled();
+}
+
+bool USGM_PredictedCollisionNotifyState::BuildTraceTransform(
+	const USkeletalMeshComponent* MeshComp,
+	FTransform& OutTransform) const
+{
+	if (!MeshComp) return false;
+
+	const bool bHasSocket = !SourceSocketName.IsNone() && MeshComp->DoesSocketExist(SourceSocketName);
+
+	const FTransform SourceTransform = bHasSocket
+		? MeshComp->GetSocketTransform(SourceSocketName, RTS_World)
+		: MeshComp->GetComponentTransform();
+
+	const FTransform RelativeTransform(RelativeRotation, RelativeLocation);
+
+	// Relative first, socket/component second: this applies the offset in socket space.
+	OutTransform = RelativeTransform * SourceTransform;
+	return true;
+}
+
+FCollisionShape USGM_PredictedCollisionNotifyState::MakeCollisionShape() const
+{
+	switch (CollisionShape)
+	{
+	case ESGM_PredictedCollisionShape::Sphere:
+		return FCollisionShape::MakeSphere(FMath::Max(SphereRadius, 1.0f));
+
+	case ESGM_PredictedCollisionShape::Capsule:
+		return FCollisionShape::MakeCapsule(
+			FMath::Max(CapsuleRadius, 1.0f),
+			FMath::Max(CapsuleHalfHeight, 1.0f));
+
+	case ESGM_PredictedCollisionShape::Box:
+	default:
+		return FCollisionShape::MakeBox(BoxExtent.ComponentMax(FVector(1.0f)));
+	}
+}
+
+void USGM_PredictedCollisionNotifyState::SweepCollision(USkeletalMeshComponent* MeshComp, const FTransform& PreviousTransform,
+	const FTransform& CurrentTransform)
+{
+	AActor* OwnerActor = MeshComp ? MeshComp->GetOwner() : nullptr;
+	UWorld* World = MeshComp ? MeshComp->GetWorld() : nullptr;
+
+	if (!OwnerActor || !World) return;
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(SGM_PredictedCollisionSweep), false, OwnerActor);
+	QueryParams.AddIgnoredActor(OwnerActor);
+
+	const FVector PreviousLocation = PreviousTransform.GetLocation();
+	const FVector CurrentLocation = CurrentTransform.GetLocation();
+
+	const float SweepDistance = FVector::Dist(PreviousLocation, CurrentLocation);
+	const float SafeStepDistance = FMath::Max(MaxSweepStepDistance, 1.0f);
+	const int32 NumSteps = FMath::Max(1, FMath::CeilToInt(SweepDistance / SafeStepDistance));
+
+	const FCollisionShape Shape = MakeCollisionShape();
+	const FQuat SweepRotation = CurrentTransform.GetRotation();
+
+	for (int32 StepIndex = 0; StepIndex < NumSteps; ++StepIndex)
+	{
+		const float StartAlpha = static_cast<float>(StepIndex) / static_cast<float>(NumSteps);
+		const float EndAlpha = static_cast<float>(StepIndex + 1) / static_cast<float>(NumSteps);
+
+		const FVector StepStart = FMath::Lerp(PreviousLocation, CurrentLocation, StartAlpha);
+		const FVector StepEnd = FMath::Lerp(PreviousLocation, CurrentLocation, EndAlpha);
+
+		TArray<FHitResult> Hits;
+		const bool bHit = World->SweepMultiByChannel(Hits, StepStart, StepEnd, SweepRotation,
+			TraceChannel.GetValue(), Shape, QueryParams);
+
+		if (bDrawDebug)
+		{
+			DrawDebugSweep(World, StepStart, StepEnd, SweepRotation, bHit ? FColor::Red : FColor::Green);
+		}
+
+		for (const FHitResult& Hit : Hits)
+		{
+			AActor* HitActor = Hit.GetActor();
+
+			if (!HitActor || HitActor == OwnerActor) continue;
+
+			if (bOnlyHitPawns && !HitActor->IsA<APawn>()) continue;
+
+			if (HasAlreadyProcessedTarget(MeshComp, HitActor)) continue;
+
+			MarkTargetProcessed(MeshComp, HitActor);
+
+			// Route through native code so prediction logic stays separate from sweep logic.
+			HandlePredictedCollisionHit(OwnerActor, HitActor, Hit);
+		}
+	}
+}
+
+void USGM_PredictedCollisionNotifyState::DrawDebugSweep(UWorld* World, const FVector& StepStart, const FVector& StepEnd,
+	const FQuat& Rotation, const FColor& Color) const
+{
+	if (!World) return;
+
+	constexpr float DrawTime = 0.25f;
+
+	DrawDebugLine(World, StepStart, StepEnd, Color, false, DrawTime, 0, 1.5f);
+
+	switch (CollisionShape)
+	{
+	case ESGM_PredictedCollisionShape::Sphere:
+		DrawDebugSphere(World, StepStart, FMath::Max(SphereRadius, 1.0f), 16, Color, false, DrawTime);
+		DrawDebugSphere(World, StepEnd, FMath::Max(SphereRadius, 1.0f), 16, Color, false, DrawTime);
+		break;
+
+	case ESGM_PredictedCollisionShape::Capsule:
+		DrawDebugCapsule(World, StepStart, FMath::Max(CapsuleHalfHeight, 1.0f), FMath::Max(CapsuleRadius, 1.0f), Rotation, Color, false, DrawTime);
+		DrawDebugCapsule(World, StepEnd, FMath::Max(CapsuleHalfHeight, 1.0f), FMath::Max(CapsuleRadius, 1.0f), Rotation, Color, false, DrawTime);
+		break;
+
+	case ESGM_PredictedCollisionShape::Box:
+	default:
+		DrawDebugBox(World, StepStart, BoxExtent.ComponentMax(FVector(1.0f)), Rotation, Color, false, DrawTime);
+		DrawDebugBox(World, StepEnd, BoxExtent.ComponentMax(FVector(1.0f)), Rotation, Color, false, DrawTime);
+		break;
+	}
+}
+
+bool USGM_PredictedCollisionNotifyState::HasAlreadyProcessedTarget(const USkeletalMeshComponent* MeshComp,
+	const AActor* TargetActor) const
+{
+	if (!MeshComp || !TargetActor) return true;
+
+	const FSGM_PredictedCollisionRuntimeWindow* Window = ActiveWindowsByMesh.Find(MeshComp);
+	if (!Window) return false;
+
+	return Window->ProcessedTargets.Contains(TargetActor);
+}
+
+void USGM_PredictedCollisionNotifyState::MarkTargetProcessed(
+	USkeletalMeshComponent* MeshComp,
+	AActor* TargetActor)
+{
+	if (!MeshComp || !TargetActor) return;
+
+	FSGM_PredictedCollisionRuntimeWindow& Window = ActiveWindowsByMesh.FindOrAdd(MeshComp);
+	Window.ProcessedTargets.Add(TargetActor);
+}
