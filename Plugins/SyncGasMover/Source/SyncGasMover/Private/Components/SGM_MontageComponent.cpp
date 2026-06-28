@@ -16,6 +16,22 @@ namespace
 	constexpr float ContactInitialProbeInflation = 5.0f;
 	constexpr float ContactStillBlockingSlack = 12.0f;
 
+	FString SGMLogActorState(const UObject* WorldContextObject, const AActor* Actor)
+	{
+		const UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
+		const APawn* Pawn = Cast<APawn>(Actor);
+
+		return FString::Printf(TEXT("World=%s NetMode=%d Actor=%s Role=%d RemoteRole=%d Local=%d Auth=%d Loc=%s"),
+			World ? *World->GetName() : TEXT("None"),
+			World ? static_cast<int32>(World->GetNetMode()) : -1,
+			*GetNameSafe(Actor),
+			Actor ? static_cast<int32>(Actor->GetLocalRole()) : -1,
+			Actor ? static_cast<int32>(Actor->GetRemoteRole()) : -1,
+			Pawn ? Pawn->IsLocallyControlled() : false,
+			Actor ? Actor->HasAuthority() : false,
+			Actor ? *Actor->GetActorLocation().ToString() : TEXT("None"));
+	}
+
 	float NormalizeReleasePercent(float InReleasePercent)
 	{
 		const float NormalizedPercent = InReleasePercent > 1.0f
@@ -73,7 +89,16 @@ bool USGM_MontageComponent::PlayMontageLocal(UAnimMontage* InMontage, float InPl
 	const float PlayedLength = AnimInstance->Montage_Play(InMontage, InPlayRate,
 		EMontagePlayReturnType::MontageLength, ClampedStartTime, true);
 
-	if (PlayedLength <= 0.0f) return false;
+	if (PlayedLength <= 0.0f)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG PlayMontageLocal FAIL PlayedLength=%.3f %s Montage=%s Start=%.3f PlayRate=%.3f"),
+			PlayedLength, *SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), ClampedStartTime, InPlayRate);
+		return false;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG PlayMontageLocal SUCCESS %s Montage=%s Start=%.3f PlayRate=%.3f Length=%.3f HasRootMotion=%d"),
+		*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), ClampedStartTime, InPlayRate,
+		InMontage->GetPlayLength(), InMontage->HasRootMotion());
 
 	if (InStartSection != NAME_None)
 	{
@@ -101,7 +126,17 @@ bool USGM_MontageComponent::StopMontageLocal(UAnimMontage* InMontage)
 	if (!MontageMeshComponent) return false;
 
 	UAnimInstance* AnimInstance = MontageMeshComponent->GetAnimInstance();
-	if (!AnimInstance || !AnimInstance->Montage_IsPlaying(InMontage)) return false;
+	if (!AnimInstance || !AnimInstance->Montage_IsPlaying(InMontage))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG StopMontageLocal SKIP %s Montage=%s HasAnim=%d IsPlaying=%d"),
+			*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), AnimInstance != nullptr,
+			AnimInstance ? AnimInstance->Montage_IsPlaying(InMontage) : false);
+		return false;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG StopMontageLocal STOP %s Montage=%s Pos=%.3f BlendOut=%.3f"),
+		*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage),
+		AnimInstance->Montage_GetPosition(InMontage), InMontage->GetDefaultBlendOutTime());
 
 	AnimInstance->Montage_Stop(InMontage->GetDefaultBlendOutTime(), InMontage);
 	ResetLocalRootMotionControlState();
@@ -158,8 +193,16 @@ bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMonta
 		return StartReplicatedMontage(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
 	}
 
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG StartReplicatedMontage ENTER %s Montage=%s Start=%.3f PlayRate=%.3f OldSerial=%d"),
+		*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), InStartTimeSeconds, InPlayRate, RepMontageState.Serial);
+
 	const bool bPlayedLocally = PlayMontageLocal(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
-	if (!bPlayedLocally) return false;
+	if (!bPlayedLocally)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG StartReplicatedMontage FAIL local play %s Montage=%s"),
+			*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage));
+		return false;
+	}
 
 	RepMontageState.Montage = InMontage;
 	RepMontageState.PlayRate = InPlayRate;
@@ -368,12 +411,19 @@ bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, floa
 	RefreshInitialContactBlockState();
 
 	SetComponentTickEnabled(true);
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG StartReplicatedMontage SUCCESS %s Montage=%s NewSerial=%d RootMotionScale=%.3f"),
+		*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), RepMontageState.Serial, RepMontageState.RootMotionScale);
+
 	return true;
 }
 
 void USGM_MontageComponent::ServerPlayReplicatedMontage_Implementation(UAnimMontage* InMontage, float InPlayRate,
 	float InStartTimeSeconds, FName InStartSection)
 {
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG ServerPlayReplicatedMontage ENTER %s Montage=%s Start=%.3f PlayRate=%.3f CurrentSerial=%d IsPlaying=%d CurrentMontage=%s"),
+		*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), InStartTimeSeconds, InPlayRate,
+		RepMontageState.Serial, RepMontageState.bIsPlaying, *GetNameSafe(RepMontageState.Montage));
+
 	if (RepMontageState.bIsPlaying
 		&& RepMontageState.Montage == InMontage
 		&& FMath::IsNearlyEqual(RepMontageState.PlayRate, InPlayRate)
@@ -400,6 +450,9 @@ void USGM_MontageComponent::ServerPlayReplicatedMontage_Implementation(UAnimMont
 		constexpr float DuplicatePredictedPlayRejectWindowSeconds = 0.75f;
 		if (bServerAlreadyPlayingSameMontage && CurrentServerMontagePosition <= DuplicatePredictedPlayRejectWindowSeconds)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG ServerPlayReplicatedMontage DUPLICATE_REJECT %s Montage=%s ServerPos=%.3f Window=%.3f Serial=%d"),
+				*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage),
+				CurrentServerMontagePosition, DuplicatePredictedPlayRejectWindowSeconds, RepMontageState.Serial);
 			return;
 		}
 	}
@@ -440,6 +493,13 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 	if (!AnimInstance) return;
 
 	const bool bHasNewMontageCommand = LastAppliedMontageSerial != RepMontageState.Serial;
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG OnRep_RepMontageState ENTER %s Montage=%s Serial=%d LastSerial=%d NewCmd=%d IsPlaying=%d Disabled=%d Scale=%.3f DisableSerial=%d LastDisable=%d ScaleSerial=%d LastScale=%d"),
+		*SGMLogActorState(this, GetOwner()), *GetNameSafe(RepMontageState.Montage),
+		RepMontageState.Serial, LastAppliedMontageSerial, bHasNewMontageCommand,
+		RepMontageState.bIsPlaying, RepMontageState.bRootMotionDisabled, RepMontageState.RootMotionScale,
+		RepMontageState.DisableRootMotionSerial, LastAppliedDisableRootMotionSerial,
+		RepMontageState.RootMotionScaleSerial, LastAppliedRootMotionScaleSerial);
+
 	if (bHasNewMontageCommand)
 	{
 		LastAppliedMontageSerial = RepMontageState.Serial;
@@ -461,6 +521,12 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 			const AActor* OwnerActor = GetOwner();
 			const bool bIsAutonomousProxy = OwnerActor && OwnerActor->GetLocalRole() == ROLE_AutonomousProxy;
 			const bool bAlreadyPlayingSameMontage = AnimInstance->Montage_IsPlaying(RepMontageState.Montage);
+
+			UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG OnRep PLAY_CMD %s Montage=%s Autonomous=%d AlreadyPlaying=%d AnimPos=%.3f RepStart=%.3f"),
+				*SGMLogActorState(this, OwnerActor), *GetNameSafe(RepMontageState.Montage),
+				bIsAutonomousProxy, bAlreadyPlayingSameMontage,
+				bAlreadyPlayingSameMontage ? AnimInstance->Montage_GetPosition(RepMontageState.Montage) : -1.0f,
+				RepMontageState.StartTimeSeconds);
 
 			if (!(bIsAutonomousProxy && bAlreadyPlayingSameMontage))
 			{
@@ -536,6 +602,9 @@ void USGM_MontageComponent::QueueRootMotionMove(UAnimMontage* InMontage, float I
 	UMoverComponent* MoverComponent = GetMoverComponent();
 	if (!MoverComponent || !InMontage || InPlayRate == 0.0f) return;
 
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG QueueRootMotionMove ENTER %s Montage=%s StartPos=%.3f PlayRate=%.3f Scale=%.3f CancelExisting=1"),
+		*SGMLogActorState(this, OwnerActor), *GetNameSafe(InMontage), InStartingMontagePosition, InPlayRate, InRootMotionScale);
+
 	MoverComponent->CancelFeaturesWithTag(TAG_SyncGasMover_RootMotion, true);
 
 	TSharedPtr<FSGM_AnimRootMotionLayeredMove> AnimRootMotionMove = MakeShared<FSGM_AnimRootMotionLayeredMove>();
@@ -559,6 +628,11 @@ void USGM_MontageComponent::QueueRootMotionMove(UAnimMontage* InMontage, float I
 
 	AnimRootMotionMove->DurationMs = (RemainingUnscaledMontageSeconds / FMath::Abs(InPlayRate)) * 1000.0f;
 	MoverComponent->QueueLayeredMove(AnimRootMotionMove);
+
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG QueueRootMotionMove QUEUED %s Montage=%s DurationMs=%.3f StopOnContact=%d HalfAngle=%.3f MixMode=%d"),
+		*SGMLogActorState(this, OwnerActor), *GetNameSafe(InMontage), AnimRootMotionMove->DurationMs,
+		AnimRootMotionMove->bStopRootMotionOnPawnContact, AnimRootMotionMove->PawnContactBlockHalfAngleDegrees,
+		static_cast<int32>(AnimRootMotionMove->MixMode));
 }
 
 void USGM_MontageComponent::UpdateRootMotionControl(float DeltaSeconds)
@@ -575,6 +649,15 @@ void USGM_MontageComponent::UpdateRootMotionControl(float DeltaSeconds)
 	UAnimInstance* AnimInstance = MontageMeshComponent ? MontageMeshComponent->GetAnimInstance() : nullptr;
 	if (!AnimInstance || !AnimInstance->Montage_IsPlaying(RepMontageState.Montage))
 	{
+		const float LastPosition = AnimInstance && RepMontageState.Montage
+			? AnimInstance->Montage_GetPosition(RepMontageState.Montage)
+			: -1.0f;
+
+		UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG UpdateRootMotionControl MONTAGE_ENDED %s Montage=%s LastPos=%.3f StatePlaying=%d Disabled=%d Scale=%.3f Blend=%d Released=%d"),
+			*SGMLogActorState(this, GetOwner()), *GetNameSafe(RepMontageState.Montage), LastPosition,
+			RepMontageState.bIsPlaying, RepMontageState.bRootMotionDisabled, RepMontageState.RootMotionScale,
+			bCanBlendUpperAndLowerBody, bRootMotionReleasedByPercent);
+
 		// Natural montage end must clear the tracked playing state too.
 		// Otherwise ShouldBlockMovementInputDuringRootMotion() keeps blocking after the animation is gone.
 		RepMontageState.bIsPlaying = false;

@@ -10,6 +10,25 @@
 #include "MoverTypes.h"
 #include "Tags/SGM_NativeTags.h"
 
+namespace
+{
+	FString SGMLayeredMoveActorState(const AActor* Actor)
+	{
+		const UWorld* World = Actor ? Actor->GetWorld() : nullptr;
+		const APawn* Pawn = Cast<APawn>(Actor);
+
+		return FString::Printf(TEXT("World=%s NetMode=%d Actor=%s Role=%d RemoteRole=%d Local=%d Auth=%d Loc=%s"),
+			World ? *World->GetName() : TEXT("None"),
+			World ? static_cast<int32>(World->GetNetMode()) : -1,
+			*GetNameSafe(Actor),
+			Actor ? static_cast<int32>(Actor->GetLocalRole()) : -1,
+			Actor ? static_cast<int32>(Actor->GetRemoteRole()) : -1,
+			Pawn ? Pawn->IsLocallyControlled() : false,
+			Actor ? Actor->HasAuthority() : false,
+			Actor ? *Actor->GetActorLocation().ToString() : TEXT("None"));
+	}
+}
+
 bool FSGM_AnimRootMotionLayeredMove::HasGameplayTag(FGameplayTag TagToFind, bool bExactMatch) const
 {
 	const FGameplayTag RootMotionTag = TAG_SyncGasMover_RootMotion.GetTag();
@@ -29,20 +48,29 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 	const FMoverTimeStep& TimeStep, const UMoverComponent* MoverComp, UMoverBlackboard* SimBlackboard,
 	FProposedMove& OutProposedMove)
 {
+	const AActor* OwnerActor = MoverComp ? MoverComp->GetOwner() : nullptr;
+
 	if (!TimeStep.bIsResimulating)
 	{
 		bool bIsMontageStillPlaying = false;
+		float CurrentAnimMontagePosition = -1.0f;
 
-		if (const USkeletalMeshComponent* MeshComp = Cast<USkeletalMeshComponent>(MoverComp->GetPrimaryVisualComponent()))
+		if (const USkeletalMeshComponent* MeshComp = MoverComp ? Cast<USkeletalMeshComponent>(MoverComp->GetPrimaryVisualComponent()) : nullptr)
 		{
 			if (const UAnimInstance* MeshAnimInstance = MeshComp->GetAnimInstance())
 			{
 				bIsMontageStillPlaying = MontageState.Montage && MeshAnimInstance->Montage_IsPlaying(MontageState.Montage);
+				CurrentAnimMontagePosition = MontageState.Montage ? MeshAnimInstance->Montage_GetPosition(MontageState.Montage) : -1.0f;
 			}
 		}
 
 		if (!bIsMontageStillPlaying)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG RootMotionMove STOP_MONTAGE_NOT_PLAYING %s Montage=%s BaseMs=%.3f StartMs=%.3f StepMs=%.3f AnimPos=%.3f DurationMs=%.3f RootScale=%.3f"),
+				*SGMLayeredMoveActorState(OwnerActor), *GetNameSafe(MontageState.Montage),
+				TimeStep.BaseSimTimeMs, StartSimTimeMs, TimeStep.StepMs, CurrentAnimMontagePosition,
+				DurationMs, RootMotionScale);
+
 			DurationMs = 0.0f;
 			return false;
 		}
@@ -54,6 +82,8 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 
 	if (!SyncState)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG RootMotionMove FAIL_NO_SYNC_STATE %s Montage=%s BaseMs=%.3f"),
+			*SGMLayeredMoveActorState(OwnerActor), *GetNameSafe(MontageState.Montage), TimeStep.BaseSimTimeMs);
 		return false;
 	}
 
@@ -63,6 +93,8 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 	const float ExtractionStartPosition =
 		MontageState.StartingMontagePosition + ScaledSecondsSinceMontageStarted;
 	const float ExtractionEndPosition = ExtractionStartPosition + (DeltaSeconds * MontageState.PlayRate);
+	const float MontageLength = MontageState.Montage ? MontageState.Montage->GetPlayLength() : 0.0f;
+	const bool bNearMontageEnd = MontageLength > 0.0f && ExtractionEndPosition >= MontageLength - 0.250f;
 
 	const FTransform LocalRootMotion = MontageState.Montage
 		? UMotionWarpingUtilities::ExtractRootMotionFromAnimation(MontageState.Montage,
@@ -132,6 +164,11 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 
 					if (bWithinBlockAngle)
 					{
+						UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG RootMotionMove CONTACT_BLOCK %s Montage=%s Hit=%s BaseMs=%.3f Extract=%.3f->%.3f Delta=%s HalfAngle=%.3f"),
+							*SGMLayeredMoveActorState(OwnerActor), *GetNameSafe(MontageState.Montage), *GetNameSafe(HitActor),
+							TimeStep.BaseSimTimeMs, ExtractionStartPosition, ExtractionEndPosition,
+							*ScaledTranslation.ToString(), PawnContactBlockHalfAngleDegrees);
+
 						ScaledTranslation = FVector::ZeroVector;
 						ScaledRotationVector = FVector::ZeroVector;
 					}
@@ -147,6 +184,17 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 	{
 		OutProposedMove.LinearVelocity = ScaledTranslation / DeltaSeconds;
 		OutProposedMove.AngularVelocityDegrees = FMath::RadiansToDegrees(ScaledRotationVector / DeltaSeconds);
+	}
+
+	if (bNearMontageEnd || TimeStep.bIsResimulating || ScaledTranslation.IsNearlyZero())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG RootMotionMove GENERATE %s Montage=%s Resim=%d BaseMs=%.3f StartMs=%.3f StepMs=%.3f Extract=%.3f->%.3f Len=%.3f LocalDelta=%s WorldDelta=%s Scale=%.3f MixMode=%d OutVel=%s SimLoc=%s"),
+			*SGMLayeredMoveActorState(OwnerActor), *GetNameSafe(MontageState.Montage), TimeStep.bIsResimulating,
+			TimeStep.BaseSimTimeMs, StartSimTimeMs, TimeStep.StepMs,
+			ExtractionStartPosition, ExtractionEndPosition, MontageLength,
+			*LocalRootMotion.GetTranslation().ToString(), *ScaledTranslation.ToString(),
+			RootMotionScale, static_cast<int32>(OutProposedMove.MixMode),
+			*OutProposedMove.LinearVelocity.ToString(), *SyncState->GetLocation_WorldSpace().ToString());
 	}
 
 	MontageState.CurrentPosition = ExtractionStartPosition;
