@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/SGM_UpperLowerBlendProviderInterface.h"
 #include "Components/ActorComponent.h"
 #include "GameFramework/Actor.h"
 #include "SGM_MontageComponent.generated.h"
@@ -49,7 +50,7 @@ struct FSGMRepMontageState
 };
 
 UCLASS(ClassGroup = (SyncGasMover), meta = (BlueprintSpawnableComponent))
-class SYNCGASMOVER_API USGM_MontageComponent : public UActorComponent
+class SYNCGASMOVER_API USGM_MontageComponent : public UActorComponent, public ISGM_UpperLowerBlendProviderInterface
 {
 	GENERATED_BODY()
 
@@ -113,6 +114,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "SyncGasMover|Animation")
 	bool GetCanBlendUpperAndLowerBody() const { return bCanBlendUpperAndLowerBody; }
+
+	virtual bool GetCanBlendUpperAndLowerBodyForAnimation_Implementation() const override { return GetCanBlendUpperAndLowerBody(); }
 
 	static USGM_MontageComponent* FindMontageComponentFromAnimInstance(const UAnimInstance* AnimInstance)
 	{
