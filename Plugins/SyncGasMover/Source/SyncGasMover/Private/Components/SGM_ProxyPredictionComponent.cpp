@@ -1,6 +1,7 @@
 #include "Components/SGM_ProxyPredictionComponent.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbilityTypes.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -127,9 +128,24 @@ bool USGM_ProxyPredictionComponent::SendReactionGameplayEventToTarget(AActor* Ta
 	EventData.OptionalObject = ReactionData;
 	EventData.OptionalObject2 = Reaction.Montage;
 
+	if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor))
+	{
+		// Supports abilities configured with Trigger Source = "When Tag Is Added".
+		// Remove it immediately so the same reaction can fire again on the next hit.
+		TargetASC->AddLooseGameplayTag(Reaction.ReactionTriggerTag);
+		TargetASC->RemoveLooseGameplayTag(Reaction.ReactionTriggerTag);
+	}
+	else
+	{
+		UE_LOG(LogSGMProxyPrediction, Warning, TEXT("Reaction trigger failed: no ASC Target=%s TriggerTag=%s"),
+			*GetNameSafe(TargetActor), *Reaction.ReactionTriggerTag.ToString());
+		return false;
+	}
+
+	// Also send a GameplayEvent so abilities configured with Trigger Source = Gameplay Event can use payload data.
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(TargetActor, Reaction.ReactionTriggerTag, EventData);
 
-	UE_LOG(LogSGMProxyPrediction, Log, TEXT("ReactionGameplayEvent sent: Owner=%s Target=%s ReactionTag=%s TriggerTag=%s Data=%s Montage=%s"),
+	UE_LOG(LogSGMProxyPrediction, Log, TEXT("Reaction trigger sent: Owner=%s Target=%s ReactionTag=%s TriggerTag=%s Data=%s Montage=%s"),
 		*GetNameSafe(GetOwner()), *GetNameSafe(TargetActor), *ReactionTag.ToString(),
 		*Reaction.ReactionTriggerTag.ToString(), *GetNameSafe(ReactionData), *GetNameSafe(Reaction.Montage));
 	return true;
@@ -169,7 +185,6 @@ bool USGM_ProxyPredictionComponent::CanPlayPredictedReactionOnTargetProxy(AActor
 		return false;
 	}
 
-	// This is proxy prediction, so never drive the local player's own pawn as the target here.
 	const APawn* TargetPawn = Cast<APawn>(TargetActor);
 	if (TargetPawn && TargetPawn->IsLocallyControlled())
 	{
@@ -355,14 +370,11 @@ void USGM_ProxyPredictionComponent::UpdatePredictedProxyRootMotion()
 
 		ActiveRootMotion.PreviousPosition = CurrentPosition;
 
-		// Montage root motion is authored in the mesh/animation space. The pawn actor may have a different facing
-		// because the mesh is rotated relative to the capsule, so use the mesh rotation for visual proxy prediction.
 		const FVector WorldTranslation = ActiveRootMotion.InitialMeshWorldTransform.GetRotation().RotateVector(
 			LocalRootMotion.GetTranslation());
 		const FVector BeforeMeshLocation = Mesh->GetComponentLocation();
 		ActiveRootMotion.AccumulatedWorldTranslation += WorldTranslation;
 
-		// Mover can restore the proxy visual component every frame, so apply the full accumulated visual offset.
 		Mesh->SetWorldLocation(ActiveRootMotion.InitialMeshWorldTransform.GetLocation()
 			+ ActiveRootMotion.AccumulatedWorldTranslation, false, nullptr, ETeleportType::None);
 
