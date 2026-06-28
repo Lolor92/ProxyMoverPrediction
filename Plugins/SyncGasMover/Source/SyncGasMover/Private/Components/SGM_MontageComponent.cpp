@@ -295,7 +295,11 @@ void USGM_MontageComponent::SetRootMotionContactBlockingAngleDegrees(float HalfA
 	if (bEnableRootMotionContactBlocking && ShouldDrivePredictedRootMotionControl())
 	{
 		BindContactBlockingEvents();
-		ApplyRootMotionScaleToCurrentMontage(RepMontageState.RootMotionScale);
+
+		// Do not call ApplyRootMotionScaleToCurrentMontage() here.
+		// PlayMontageLocal already queued the root-motion move. Re-applying scale here cancels
+		// and requeues it immediately, which causes high-ping resim jitter.
+		// RefreshInitialContactBlockState() may still set scale to 0 if we are already blocked.
 		RefreshInitialContactBlockState();
 	}
 	else

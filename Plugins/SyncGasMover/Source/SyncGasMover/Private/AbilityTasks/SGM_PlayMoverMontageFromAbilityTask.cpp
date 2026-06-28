@@ -39,20 +39,6 @@ void USGM_PlayMoverMontageFromAbilityTask::Activate()
 		return;
 	}
 
-	// Configure root-motion control before playing the montage.
-	// PlayMontageLocal queues the Mover layered move immediately, so these settings must already
-	// be in place or the task will queue once, then requeue after contact/release setup.
-	MontageComponent->SetRootMotionContactBlockingAngleDegrees(ContactBlockHalfAngleDegrees);
-
-	if (ReleasePercent >= 0.0f)
-	{
-		MontageComponent->StartRootMotionReleaseAtMontagePercent(ReleasePercent);
-	}
-	else
-	{
-		MontageComponent->ClearRootMotionRelease();
-	}
-
 	const bool bStarted = MontageComponent->PlayPredictedReplicatedMontage(
 		MontageToPlay,
 		PlayRateToUse,
@@ -63,6 +49,17 @@ void USGM_PlayMoverMontageFromAbilityTask::Activate()
 	{
 		BroadcastCancelledAndEnd();
 		return;
+	}
+
+	MontageComponent->SetRootMotionContactBlockingAngleDegrees(ContactBlockHalfAngleDegrees);
+
+	if (ReleasePercent >= 0.0f)
+	{
+		MontageComponent->StartRootMotionReleaseAtMontagePercent(ReleasePercent);
+	}
+	else
+	{
+		MontageComponent->ClearRootMotionRelease();
 	}
 
 	MeshComponent = MontageComponent->GetResolvedMontageMeshComponent();
