@@ -1,9 +1,11 @@
 #include "Components/SGM_ProxyPredictionComponent.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Pawn.h"
+#include "GameplayAbilityTypes.h"
 #include "MotionWarpingComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogSGMProxyPrediction, Log, All);
@@ -13,7 +15,7 @@ USGM_ProxyPredictionComponent::USGM_ProxyPredictionComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
-	SetIsReplicatedByDefault(false);
+	SetIsReplicatedByDefault(true);
 }
 
 void USGM_ProxyPredictionComponent::TickComponent(float DeltaTime, ELevelTick TickType,
@@ -55,15 +57,81 @@ bool USGM_ProxyPredictionComponent::PlayPredictedReactionOnTargetProxy(AActor* T
 		return false;
 	}
 
+	TriggerReactionGameplayEventOnTarget(TargetActor, ReactionTag);
+
 	if (UWorld* World = GetWorld())
 	{
 		LastReactionTimeByTarget.FindOrAdd(TargetActor) = World->GetTimeSeconds();
 	}
 
-	UE_LOG(LogSGMProxyPrediction, Log, TEXT("PlayPredictedReaction success: Owner=%s Target=%s Tag=%s Montage=%s HasRootMotion=%d"),
+	UE_LOG(LogSGMProxyPrediction, Log, TEXT("PlayPredictedReaction success: Owner=%s Target=%s Tag=%s Montage=%s HasRootMotion=%d TriggerTag=%s"),
 		*GetNameSafe(GetOwner()), *GetNameSafe(TargetActor), *ReactionTag.ToString(),
-		*GetNameSafe(Reaction.Montage), Reaction.Montage ? Reaction.Montage->HasRootMotion() : false);
+		*GetNameSafe(Reaction.Montage), Reaction.Montage ? Reaction.Montage->HasRootMotion() : false,
+		*Reaction.ReactionTriggerTag.ToString());
 
+	return true;
+}
+
+bool USGM_ProxyPredictionComponent::TriggerReactionGameplayEventOnTarget(AActor* TargetActor, FGameplayTag ReactionTag)
+{
+	if (!ReactionData || !ReactionTag.IsValid())
+	{
+		return false;
+	}
+
+	FSGM_ReactionDataEntry Reaction;
+	if (!ReactionData->FindReaction(ReactionTag, Reaction))
+	{
+		return false;
+	}
+
+	AActor* OwnerActor = GetOwner();
+	if (OwnerActor && OwnerActor->HasAuthority())
+	{
+		return SendReactionGameplayEventToTarget(TargetActor, ReactionTag, Reaction);
+	}
+
+	ServerTriggerReactionGameplayEventOnTarget(TargetActor, ReactionTag);
+	return Reaction.ReactionTriggerTag.IsValid();
+}
+
+void USGM_ProxyPredictionComponent::ServerTriggerReactionGameplayEventOnTarget_Implementation(AActor* TargetActor,
+	FGameplayTag ReactionTag)
+{
+	if (!ReactionData || !ReactionTag.IsValid())
+	{
+		return;
+	}
+
+	FSGM_ReactionDataEntry Reaction;
+	if (!ReactionData->FindReaction(ReactionTag, Reaction))
+	{
+		return;
+	}
+
+	SendReactionGameplayEventToTarget(TargetActor, ReactionTag, Reaction);
+}
+
+bool USGM_ProxyPredictionComponent::SendReactionGameplayEventToTarget(AActor* TargetActor, FGameplayTag ReactionTag,
+	const FSGM_ReactionDataEntry& Reaction) const
+{
+	if (!TargetActor || !Reaction.ReactionTriggerTag.IsValid())
+	{
+		return false;
+	}
+
+	FGameplayEventData EventData;
+	EventData.EventTag = Reaction.ReactionTriggerTag;
+	EventData.Instigator = GetOwner();
+	EventData.Target = TargetActor;
+	EventData.OptionalObject = ReactionData;
+	EventData.OptionalObject2 = Reaction.Montage;
+
+	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(TargetActor, Reaction.ReactionTriggerTag, EventData);
+
+	UE_LOG(LogSGMProxyPrediction, Log, TEXT("ReactionGameplayEvent sent: Owner=%s Target=%s ReactionTag=%s TriggerTag=%s Data=%s Montage=%s"),
+		*GetNameSafe(GetOwner()), *GetNameSafe(TargetActor), *ReactionTag.ToString(),
+		*Reaction.ReactionTriggerTag.ToString(), *GetNameSafe(ReactionData), *GetNameSafe(Reaction.Montage));
 	return true;
 }
 
