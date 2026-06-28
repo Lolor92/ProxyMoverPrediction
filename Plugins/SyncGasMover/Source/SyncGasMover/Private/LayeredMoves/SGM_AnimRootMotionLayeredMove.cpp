@@ -120,7 +120,6 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 
 	if (bStopRootMotionOnPawnContact && RootMotionScale > UE_KINDA_SMALL_NUMBER && !ScaledTranslation.IsNearlyZero())
 	{
-		const AActor* OwnerActor = MoverComp ? MoverComp->GetOwner() : nullptr;
 		const UWorld* World = OwnerActor ? OwnerActor->GetWorld() : nullptr;
 		const UCapsuleComponent* OwnerCapsule = OwnerActor ? OwnerActor->FindComponentByClass<UCapsuleComponent>() : nullptr;
 

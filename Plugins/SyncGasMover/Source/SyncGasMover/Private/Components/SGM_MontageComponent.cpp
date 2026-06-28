@@ -602,6 +602,8 @@ void USGM_MontageComponent::QueueRootMotionMove(UAnimMontage* InMontage, float I
 	UMoverComponent* MoverComponent = GetMoverComponent();
 	if (!MoverComponent || !InMontage || InPlayRate == 0.0f) return;
 
+	AActor* OwnerActor = GetOwner();
+
 	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG QueueRootMotionMove ENTER %s Montage=%s StartPos=%.3f PlayRate=%.3f Scale=%.3f CancelExisting=1"),
 		*SGMLogActorState(this, OwnerActor), *GetNameSafe(InMontage), InStartingMontagePosition, InPlayRate, InRootMotionScale);
 
