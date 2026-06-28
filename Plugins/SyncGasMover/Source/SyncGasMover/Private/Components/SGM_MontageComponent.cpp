@@ -348,11 +348,12 @@ bool USGM_MontageComponent::TryReleaseRootMotionForMovementInput()
 	SetContactRootMotionBlocked(false);
 	SetCanBlendUpperAndLowerBody(true);
 
-	if (RepMontageState.bRootMotionDisabled)
+	if (RepMontageState.bRootMotionDisabled || bLocalRootMotionDisableRequested)
 	{
 		return true;
 	}
 
+	bLocalRootMotionDisableRequested = true;
 	return DisableRootMotionPredictedReplicated();
 }
 
@@ -990,4 +991,5 @@ void USGM_MontageComponent::ResetLocalRootMotionControlState()
 	UnbindContactBlockingEvents();
 	bRootMotionReleasedByPercent = false;
 	RootMotionReleasePercent = -1.0f;
+	bLocalRootMotionDisableRequested = false;
 }

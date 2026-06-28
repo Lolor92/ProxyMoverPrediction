@@ -217,4 +217,5 @@ private:
 	float RootMotionReleasePercent = -1.0f;
 	bool bRootMotionReleasedByPercent = false;
 	bool bRootMotionBlockedByContact = false;
+	bool bLocalRootMotionDisableRequested = false;
 };
