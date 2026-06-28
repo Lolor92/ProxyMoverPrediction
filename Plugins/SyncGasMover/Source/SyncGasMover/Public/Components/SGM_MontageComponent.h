@@ -221,7 +221,7 @@ private:
 	bool bIgnoreNextReplicatedStopForPredictedStart = false;
 };
 
-#if SGM_SILENCE_MONTAGE_COMPONENT_LOGS
+#if defined(SGM_SILENCE_MONTAGE_COMPONENT_LOGS) && SGM_SILENCE_MONTAGE_COMPONENT_LOGS
 #undef UE_LOG
 #define UE_LOG(...) do { } while (false)
 #endif
