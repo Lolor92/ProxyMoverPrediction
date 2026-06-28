@@ -134,7 +134,11 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 				const UCapsuleComponent* StickyCapsule = StickyActor->FindComponentByClass<UCapsuleComponent>();
 				const float OwnerRadius = OwnerCapsule->GetScaledCapsuleRadius();
 				const float StickyRadius = StickyCapsule ? StickyCapsule->GetScaledCapsuleRadius() : OwnerRadius;
-				constexpr float StickyContactSlack = 18.0f;
+
+				// The sweep can still hit a pawn even when actor-center distance is larger than
+				// radius+radius, especially during large resim root-motion steps. Scale the memory
+				// leash by the current step delta so contact memory does not flicker off/on.
+				const float StickyContactSlack = FMath::Max(45.0f, ScaledTranslation.Size2D() + 20.0f);
 				const float MaxStickyDistance = OwnerRadius + StickyRadius + StickyContactSlack;
 
 				FVector ToStickyActor = StickyActor->GetActorLocation() - StartLocation;
