@@ -15,6 +15,11 @@ struct FSGM_ReactionDataEntry
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SyncGasMover|Reaction")
 	FGameplayTag ReactionTag;
 
+	// Server-side gameplay event tag used to wake an already-granted reaction ability on the target ASC.
+	// Leave invalid if this reaction should stay visual-only for now.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SyncGasMover|Reaction|Ability")
+	FGameplayTag ReactionTriggerTag;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SyncGasMover|Reaction")
 	TObjectPtr<UAnimMontage> Montage = nullptr;
 
