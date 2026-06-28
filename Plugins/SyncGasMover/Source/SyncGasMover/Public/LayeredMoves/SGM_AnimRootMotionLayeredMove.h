@@ -23,6 +23,9 @@ struct SYNCGASMOVER_API FSGM_AnimRootMotionLayeredMove : public FLayeredMove_Ani
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Mover)
 	float PawnContactBlockHalfAngleDegrees = 40.0f;
 
+	// Prevents hit/no-hit flicker during resimulation. Cleared automatically when the pawn moves away/out of cone.
+	TWeakObjectPtr<AActor> StickyPawnContactBlockActor;
+
 	virtual bool HasGameplayTag(FGameplayTag TagToFind, bool bExactMatch) const override;
 	virtual bool GenerateMove(const FMoverTickStartData& StartState, const FMoverTimeStep& TimeStep,
 		const UMoverComponent* MoverComp, UMoverBlackboard* SimBlackboard, FProposedMove& OutProposedMove) override;

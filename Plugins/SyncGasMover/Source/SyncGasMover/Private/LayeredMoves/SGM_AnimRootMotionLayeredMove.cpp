@@ -125,12 +125,51 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 
 		if (OwnerActor && World && OwnerCapsule)
 		{
+			const FVector StartLocation = SyncState->GetLocation_WorldSpace();
+			const FVector Forward = SyncState->GetOrientation_WorldSpace().Vector().GetSafeNormal2D();
+			const float MinForwardDot = FMath::Cos(FMath::DegreesToRadians(PawnContactBlockHalfAngleDegrees));
+
+			if (AActor* StickyActor = StickyPawnContactBlockActor.Get())
+			{
+				const UCapsuleComponent* StickyCapsule = StickyActor->FindComponentByClass<UCapsuleComponent>();
+				const float OwnerRadius = OwnerCapsule->GetScaledCapsuleRadius();
+				const float StickyRadius = StickyCapsule ? StickyCapsule->GetScaledCapsuleRadius() : OwnerRadius;
+				constexpr float StickyContactSlack = 18.0f;
+				const float MaxStickyDistance = OwnerRadius + StickyRadius + StickyContactSlack;
+
+				FVector ToStickyActor = StickyActor->GetActorLocation() - StartLocation;
+				ToStickyActor.Z = 0.0f;
+
+				const bool bStickyStillClose = ToStickyActor.SizeSquared() <= FMath::Square(MaxStickyDistance);
+				const bool bStickyStillInCone = ToStickyActor.IsNearlyZero()
+					|| FVector::DotProduct(Forward, ToStickyActor.GetSafeNormal()) >= MinForwardDot;
+
+				if (bStickyStillClose && bStickyStillInCone)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG RootMotionMove CONTACT_MEMORY_BLOCK %s Montage=%s Hit=%s BaseMs=%.3f Extract=%.3f->%.3f Delta=%s Dist=%.3f MaxDist=%.3f HalfAngle=%.3f"),
+						*SGMLayeredMoveActorState(OwnerActor), *GetNameSafe(MontageState.Montage), *GetNameSafe(StickyActor),
+						TimeStep.BaseSimTimeMs, ExtractionStartPosition, ExtractionEndPosition,
+						*ScaledTranslation.ToString(), ToStickyActor.Size(), MaxStickyDistance, PawnContactBlockHalfAngleDegrees);
+
+					ScaledTranslation = FVector::ZeroVector;
+					ScaledRotationVector = FVector::ZeroVector;
+				}
+				else
+				{
+					UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG RootMotionMove CONTACT_MEMORY_RELEASE %s Montage=%s Hit=%s BaseMs=%.3f Dist=%.3f MaxDist=%.3f InCone=%d"),
+						*SGMLayeredMoveActorState(OwnerActor), *GetNameSafe(MontageState.Montage), *GetNameSafe(StickyActor),
+						TimeStep.BaseSimTimeMs, ToStickyActor.Size(), MaxStickyDistance, bStickyStillInCone);
+
+					StickyPawnContactBlockActor.Reset();
+				}
+			}
+
 			FVector SweepDelta = ScaledTranslation;
 			SweepDelta.Z = 0.0f;
 
 			if (!SweepDelta.IsNearlyZero())
 			{
-				const FVector StartLocation = SyncState->GetLocation_WorldSpace();
+				const FVector EndLocation = StartLocation + SweepDelta;
 				const FVector EndLocation = StartLocation + SweepDelta;
 				const FCollisionShape SweepShape = FCollisionShape::MakeCapsule(
 					OwnerCapsule->GetScaledCapsuleRadius(),
@@ -156,13 +195,13 @@ bool FSGM_AnimRootMotionLayeredMove::GenerateMove(const FMoverTickStartData& Sim
 					FVector ToHitActor = HitActor->GetActorLocation() - StartLocation;
 					ToHitActor.Z = 0.0f;
 
-					const FVector Forward = SyncState->GetOrientation_WorldSpace().Vector().GetSafeNormal2D();
-					const float MinForwardDot = FMath::Cos(FMath::DegreesToRadians(PawnContactBlockHalfAngleDegrees));
 					const bool bWithinBlockAngle = ToHitActor.IsNearlyZero()
 						|| FVector::DotProduct(Forward, ToHitActor.GetSafeNormal()) >= MinForwardDot;
 
 					if (bWithinBlockAngle)
 					{
+						StickyPawnContactBlockActor = const_cast<AActor*>(HitActor);
+
 						UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG RootMotionMove CONTACT_BLOCK %s Montage=%s Hit=%s BaseMs=%.3f Extract=%.3f->%.3f Delta=%s HalfAngle=%.3f"),
 							*SGMLayeredMoveActorState(OwnerActor), *GetNameSafe(MontageState.Montage), *GetNameSafe(HitActor),
 							TimeStep.BaseSimTimeMs, ExtractionStartPosition, ExtractionEndPosition,
