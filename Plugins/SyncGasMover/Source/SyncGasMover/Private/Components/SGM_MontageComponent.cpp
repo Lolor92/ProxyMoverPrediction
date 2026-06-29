@@ -83,6 +83,7 @@ void USGM_MontageComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	DisplayLocalPingDebug();
 	UpdateRootMotionControl(DeltaTime);
 	UpdateLocalProxyReactionMontage();
+	UpdateLocalProxyReactionClearBlend(DeltaTime);
 	DebugTrackSimProxyCorrection(DeltaTime);
 }
 
@@ -833,11 +834,11 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 					&& bLocalProxyReactionPlaying
 					&& LocalProxyReactionMontage == RepMontageState.Montage)
 				{
-					UE_LOG(LogTemp, Warning, TEXT("SGM_REACTION_PROXY_ROOTMOTION_CLEAR_ON_SERVER_ACK %s Montage=%s"),
+					UE_LOG(LogTemp, Warning, TEXT("SGM_REACTION_PROXY_ROOTMOTION_BLEND_CLEAR_ON_SERVER_ACK %s Montage=%s"),
 						*SGMLogActorState(this, OwnerActor),
 						*GetNameSafe(RepMontageState.Montage));
 
-					ClearLocalProxyReactionMontage();
+					StartLocalProxyReactionClearBlend(0.12f);
 				}
 			}
 
@@ -1392,8 +1393,89 @@ void USGM_MontageComponent::UpdateLocalProxyReactionMontage()
 
 }
 
+void USGM_MontageComponent::StartLocalProxyReactionClearBlend(float BlendDurationSeconds)
+{
+	ResolveMeshComponent();
+
+	if (!MontageMeshComponent)
+	{
+		ClearLocalProxyReactionMontage();
+		return;
+	}
+
+	LocalProxyReactionClearStartMeshRelativeTransform = MontageMeshComponent->GetRelativeTransform();
+	LocalProxyReactionClearTargetMeshRelativeTransform = LocalProxyReactionOriginalMeshRelativeTransform;
+	LocalProxyReactionClearElapsedSeconds = 0.0f;
+	LocalProxyReactionClearDurationSeconds = FMath::Max(0.01f, BlendDurationSeconds);
+	bLocalProxyReactionClearBlendActive = true;
+
+	LocalProxyReactionMontage = nullptr;
+	bLocalProxyReactionPlaying = false;
+	LocalProxyReactionStartPosition = 0.0f;
+
+	SetComponentTickEnabled(true);
+}
+
+void USGM_MontageComponent::UpdateLocalProxyReactionClearBlend(float DeltaSeconds)
+{
+	if (!bLocalProxyReactionClearBlendActive)
+	{
+		return;
+	}
+
+	ResolveMeshComponent();
+
+	if (!MontageMeshComponent)
+	{
+		bLocalProxyReactionClearBlendActive = false;
+		return;
+	}
+
+	LocalProxyReactionClearElapsedSeconds += DeltaSeconds;
+	const float Alpha = FMath::Clamp(
+		LocalProxyReactionClearElapsedSeconds / FMath::Max(0.01f, LocalProxyReactionClearDurationSeconds),
+		0.0f,
+		1.0f);
+
+	FTransform BlendedTransform;
+	BlendedTransform.Blend(
+		LocalProxyReactionClearStartMeshRelativeTransform,
+		LocalProxyReactionClearTargetMeshRelativeTransform,
+		Alpha);
+
+	MontageMeshComponent->SetRelativeTransform(BlendedTransform);
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("SGM_REACTION_PROXY_ROOTMOTION_CLEAR_BLEND %s Alpha=%.3f MeshRel=%s MeshWorld=%s"),
+		*SGMLogActorState(this, GetOwner()),
+		Alpha,
+		*MontageMeshComponent->GetRelativeLocation().ToString(),
+		*MontageMeshComponent->GetComponentLocation().ToString());
+
+	if (Alpha >= 1.0f)
+	{
+		bLocalProxyReactionClearBlendActive = false;
+		LocalProxyReactionClearStartMeshRelativeTransform = FTransform::Identity;
+		LocalProxyReactionClearTargetMeshRelativeTransform = FTransform::Identity;
+		LocalProxyReactionClearElapsedSeconds = 0.0f;
+		LocalProxyReactionClearDurationSeconds = 0.0f;
+
+#if !UE_BUILD_SHIPPING
+		SetComponentTickEnabled(true);
+#else
+		SetComponentTickEnabled(RepMontageState.bIsPlaying);
+#endif
+	}
+}
+
 void USGM_MontageComponent::ClearLocalProxyReactionMontage()
 {
+	bLocalProxyReactionClearBlendActive = false;
+	LocalProxyReactionClearStartMeshRelativeTransform = FTransform::Identity;
+	LocalProxyReactionClearTargetMeshRelativeTransform = FTransform::Identity;
+	LocalProxyReactionClearElapsedSeconds = 0.0f;
+	LocalProxyReactionClearDurationSeconds = 0.0f;
+
 	if (MontageMeshComponent)
 	{
 		MontageMeshComponent->SetRelativeTransform(LocalProxyReactionOriginalMeshRelativeTransform);

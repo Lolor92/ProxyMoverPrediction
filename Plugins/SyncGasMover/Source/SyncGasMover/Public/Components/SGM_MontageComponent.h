@@ -201,6 +201,8 @@ private:
 	void SetReplicatedRootMotionScale(float InRootMotionScale);
 	void ResetLocalRootMotionControlState();
 	void UpdateLocalProxyReactionMontage();
+	void UpdateLocalProxyReactionClearBlend(float DeltaSeconds);
+	void StartLocalProxyReactionClearBlend(float BlendDurationSeconds);
 	void ClearLocalProxyReactionMontage();
 	void DebugTrackSimProxyCorrection(float DeltaSeconds);
 
@@ -238,6 +240,12 @@ private:
 	FTransform LocalProxyReactionOriginalMeshRelativeTransform = FTransform::Identity;
 	float LocalProxyReactionStartPosition = 0.0f;
 	bool bLocalProxyReactionPlaying = false;
+
+	FTransform LocalProxyReactionClearStartMeshRelativeTransform = FTransform::Identity;
+	FTransform LocalProxyReactionClearTargetMeshRelativeTransform = FTransform::Identity;
+	float LocalProxyReactionClearElapsedSeconds = 0.0f;
+	float LocalProxyReactionClearDurationSeconds = 0.0f;
+	bool bLocalProxyReactionClearBlendActive = false;
 
 	FVector DebugLastSimProxyActorLocation = FVector::ZeroVector;
 	bool bDebugHasLastSimProxyActorLocation = false;
