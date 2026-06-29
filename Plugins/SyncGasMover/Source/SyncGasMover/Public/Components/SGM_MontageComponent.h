@@ -25,9 +25,6 @@ struct FSGMRepMontageState
 	int32 Serial = 0;
 
 	UPROPERTY()
-	int32 AttackInstanceKey = 0;
-
-	UPROPERTY()
 	float PlayRate = 1.0f;
 
 	UPROPERTY()
@@ -90,9 +87,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Montage")
 	USkeletalMeshComponent* GetResolvedMontageMeshComponent();
 
-	UFUNCTION(BlueprintPure, Category = "SyncGasMover|Prediction")
-	int32 GetCurrentAttackInstanceKey() const { return RepMontageState.AttackInstanceKey; }
-
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Root Motion")
 	void StartRootMotionReleaseAtMontagePercent(float ReleasePercent);
 
@@ -133,14 +127,14 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Montage")
 	bool StartReplicatedMontage(UAnimMontage* InMontage, float InPlayRate = 1.0f,
-		float InStartTimeSeconds = 0.0f, FName InStartSection = NAME_None, int32 InAttackInstanceKey = 0);
+		float InStartTimeSeconds = 0.0f, FName InStartSection = NAME_None);
 
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Montage")
 	void StopReplicatedMontage();
 
 	UFUNCTION(Server, Reliable)
 	void ServerPlayReplicatedMontage(UAnimMontage* InMontage, float InPlayRate,
-		float InStartTimeSeconds, FName InStartSection, int32 InAttackInstanceKey);
+		float InStartTimeSeconds, FName InStartSection);
 
 	UFUNCTION(Server, Reliable)
 	void ServerDisableRootMotionForReplicatedMontage();
@@ -185,7 +179,6 @@ private:
 	UCapsuleComponent* GetOwnerCapsuleComponent() const;
 	void QueueRootMotionMove(UAnimMontage* InMontage, float InPlayRate, float InStartingMontagePosition,
 		float InRootMotionScale = 1.0f);
-	int32 AllocateNextAttackInstanceKey();
 	
 	void UpdateRootMotionControl(float DeltaSeconds);
 	void UpdateMontagePercentRelease();
@@ -215,7 +208,6 @@ private:
 	int32 LastAppliedMontageSerial = INDEX_NONE;
 	int32 LastAppliedDisableRootMotionSerial = INDEX_NONE;
 	int32 LastAppliedRootMotionScaleSerial = INDEX_NONE;
-	int32 NextAttackInstanceKey = 0;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCapsuleComponent> BoundContactCapsule = nullptr;
@@ -226,4 +218,5 @@ private:
 	bool bRootMotionReleasedByPercent = false;
 	bool bRootMotionBlockedByContact = false;
 	bool bLocalRootMotionDisableRequested = false;
+	bool bIgnoreNextReplicatedStopForPredictedStart = false;
 };
