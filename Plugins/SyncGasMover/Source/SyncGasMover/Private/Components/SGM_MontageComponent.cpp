@@ -204,7 +204,7 @@ bool USGM_MontageComponent::StopMontageLocal(UAnimMontage* InMontage)
 	return true;
 }
 
-bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(UAnimMontage* InMontage, float InPlayRate,
+bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(AActor* ReactionSourceActor, UAnimMontage* InMontage, float InPlayRate,
 	float InStartTimeSeconds, FName InStartSection)
 {
 	AActor* OwnerActor = GetOwner();
@@ -288,6 +288,7 @@ bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(UAnimMontage* InMo
 		LocalProxyReactionPreviousPosition = ClampedStartTime;
 	}
 
+	LocalProxyReactionSourceActor = ReactionSourceActor;
 	LocalProxyReactionOriginalMeshRelativeTransform = MontageMeshComponent->GetRelativeTransform();
 	LocalProxyReactionMontage = InMontage;
 	LocalProxyReactionPlayRate = InPlayRate;
@@ -1267,21 +1268,49 @@ void USGM_MontageComponent::UpdateLocalProxyReactionMontage()
 
 		FTransform NewMeshRelativeTransform = LocalProxyReactionOriginalMeshRelativeTransform;
 
-		const FVector CumulativeLocalOffset = CumulativeRootMotion.GetTranslation();
+		FVector CumulativeLocalOffset = CumulativeRootMotion.GetTranslation();
+		CumulativeLocalOffset.Z = 0.0f;
+
+		const float PushDistance = CumulativeLocalOffset.Size2D();
+
+		FVector PushDirectionWorld = OwnerActor->GetActorForwardVector().GetSafeNormal2D();
+
+		if (const AActor* SourceActor = LocalProxyReactionSourceActor.Get())
+		{
+			PushDirectionWorld = OwnerActor->GetActorLocation() - SourceActor->GetActorLocation();
+			PushDirectionWorld.Z = 0.0f;
+			PushDirectionWorld = PushDirectionWorld.GetSafeNormal();
+		}
+
+		if (PushDirectionWorld.IsNearlyZero())
+		{
+			PushDirectionWorld = -OwnerActor->GetActorForwardVector().GetSafeNormal2D();
+		}
+
+		const FVector CumulativeWorldOffset = PushDirectionWorld * PushDistance;
+
+		const USceneComponent* MeshParent = MontageMeshComponent->GetAttachParent();
+		const FVector CumulativeRelativeOffset = MeshParent
+			? MeshParent->GetComponentTransform().InverseTransformVectorNoScale(CumulativeWorldOffset)
+			: OwnerActor->GetActorTransform().InverseTransformVectorNoScale(CumulativeWorldOffset);
+
 		NewMeshRelativeTransform.SetLocation(
-			LocalProxyReactionOriginalMeshRelativeTransform.GetLocation() + CumulativeLocalOffset);
+			LocalProxyReactionOriginalMeshRelativeTransform.GetLocation() + CumulativeRelativeOffset);
 
 		MontageMeshComponent->SetRelativeTransform(NewMeshRelativeTransform);
 
 		UE_LOG(LogTemp, Warning,
-			TEXT("SGM_REACTION_PROXY_ROOTMOTION_SET %s MeshRel=%s MeshWorld=%s Montage=%s %.3f->%.3f Cumulative=%s"),
-			*SGMLogActorState(this, OwnerActor),
-			*MontageMeshComponent->GetRelativeLocation().ToString(),
-			*MontageMeshComponent->GetComponentLocation().ToString(),
-			*GetNameSafe(LocalProxyReactionMontage),
-			LocalProxyReactionStartPosition,
-			CurrentPosition,
-			*CumulativeLocalOffset.ToString());
+	TEXT("SGM_REACTION_PROXY_ROOTMOTION_SET %s Source=%s MeshRel=%s MeshWorld=%s Montage=%s %.3f->%.3f Authored=%s PushDir=%s PushDist=%.3f"),
+	*SGMLogActorState(this, OwnerActor),
+	*GetNameSafe(LocalProxyReactionSourceActor.Get()),
+	*MontageMeshComponent->GetRelativeLocation().ToString(),
+	*MontageMeshComponent->GetComponentLocation().ToString(),
+	*GetNameSafe(LocalProxyReactionMontage),
+	LocalProxyReactionStartPosition,
+	CurrentPosition,
+	*CumulativeLocalOffset.ToString(),
+	*PushDirectionWorld.ToString(),
+	PushDistance);
 	}
 
 	LocalProxyReactionPreviousPosition = CurrentPosition;
@@ -1295,6 +1324,7 @@ void USGM_MontageComponent::ClearLocalProxyReactionMontage()
 	}
 
 	LocalProxyReactionMontage = nullptr;
+	LocalProxyReactionSourceActor.Reset();
 	bLocalProxyReactionPlaying = false;
 	LocalProxyReactionOriginalMeshRelativeTransform = FTransform::Identity;
 	LocalProxyReactionStartPosition = 0.0f;
