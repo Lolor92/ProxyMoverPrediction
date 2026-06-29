@@ -6,12 +6,14 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 
+TMap<TWeakObjectPtr<const USkeletalMeshComponent>, int32> USGM_PredictedCollisionNotifyState::CurrentAttackInstanceKeysByMesh;
+TMap<TWeakObjectPtr<const USkeletalMeshComponent>, int32> USGM_PredictedCollisionNotifyState::NextAttackInstanceKeysByMesh;
+
 void USGM_PredictedCollisionNotifyState::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
 	float TotalDuration, const FAnimNotifyEventReference& EventReference)
 {
 	Super::NotifyBegin(MeshComp, Animation, TotalDuration, EventReference);
 	
-	UE_LOG(LogTemp, Warning, TEXT("TEST!!!"));
 
 	if (!MeshComp) return;
 	
@@ -33,7 +35,8 @@ void USGM_PredictedCollisionNotifyState::NotifyBegin(USkeletalMeshComponent* Mes
 
 	if (!bShouldRunCollision) return;
 	
-	Window.NotifyWindowId = ResolveNotifyWindowId(Animation, EventReference);
+	const FName ResolvedNotifyWindowId = ResolveNotifyWindowId(Animation, EventReference);
+	Window.NotifyWindowId = BuildFullCollisionWindowKey(MeshComp, ResolvedNotifyWindowId);
 
 	UE_LOG(LogTemp, Warning,
 		TEXT("SGM_COLLISION_WINDOW BEGIN Owner=%s NetMode=%d Auth=%d NotifyWindowId=%s"),
