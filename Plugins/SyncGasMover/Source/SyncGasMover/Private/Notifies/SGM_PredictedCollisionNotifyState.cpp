@@ -62,7 +62,7 @@ FString USGM_PredictedCollisionNotifyState::GetNotifyName_Implementation() const
 }
 
 void USGM_PredictedCollisionNotifyState::HandlePredictedCollisionHit(AActor* OwningActor, AActor* HitActor,
-	const FHitResult& HitResult)
+	const FHitResult& HitResult, int32 PredictionKey)
 {
 	if (bPlayPredictedReactionOnClient && PredictedReactionTag.IsValid())
 	{
@@ -70,12 +70,21 @@ void USGM_PredictedCollisionNotifyState::HandlePredictedCollisionHit(AActor* Own
 		if (USGM_ProxyPredictionComponent* PredictionComponent =
 			OwningActor ? OwningActor->FindComponentByClass<USGM_ProxyPredictionComponent>() : nullptr)
 		{
-			PredictionComponent->PlayPredictedReactionOnTargetProxy(HitActor, PredictedReactionTag);
+			PredictionComponent->PlayPredictedReactionOnTargetProxy(HitActor, PredictedReactionTag, PredictionKey);
 		}
 	}
 
 	// Keep the Blueprint hook for hit effects, logs, and quick iteration.
-	OnPredictedCollisionHit(OwningActor, HitActor, HitResult, PredictedReactionTag);
+	OnPredictedCollisionHit(OwningActor, HitActor, HitResult, PredictedReactionTag, PredictionKey);
+	
+	UE_LOG(LogTemp, Warning,
+	TEXT("SGM_COLLISION_KEY HIT Owner=%s Target=%s Tag=%s NetMode=%d Auth=%d Key=%d"),
+	*GetNameSafe(OwningActor),
+	*GetNameSafe(HitActor),
+	*PredictedReactionTag.ToString(),
+	OwningActor && OwningActor->GetWorld() ? static_cast<int32>(OwningActor->GetWorld()->GetNetMode()) : -1,
+	OwningActor ? OwningActor->HasAuthority() : false,
+	PredictionKey);
 }
 
 bool USGM_PredictedCollisionNotifyState::ShouldRunCollision(const AActor* OwnerActor) const
@@ -176,9 +185,11 @@ void USGM_PredictedCollisionNotifyState::SweepCollision(USkeletalMeshComponent* 
 			if (HasAlreadyProcessedTarget(MeshComp, HitActor)) continue;
 
 			MarkTargetProcessed(MeshComp, HitActor);
-
-			// Route through native code so prediction logic stays separate from sweep logic.
-			HandlePredictedCollisionHit(OwnerActor, HitActor, Hit);
+			
+			const FSGM_PredictedCollisionRuntimeWindow* Window = ActiveWindowsByMesh.Find(MeshComp);
+			const int32 PredictionKey = Window ? Window->PredictionKey : 0;
+			
+			HandlePredictedCollisionHit(OwnerActor, HitActor, Hit, PredictionKey);
 		}
 	}
 }
@@ -223,12 +234,24 @@ bool USGM_PredictedCollisionNotifyState::HasAlreadyProcessedTarget(const USkelet
 	return Window->ProcessedTargets.Contains(TargetActor);
 }
 
-void USGM_PredictedCollisionNotifyState::MarkTargetProcessed(
-	USkeletalMeshComponent* MeshComp,
-	AActor* TargetActor)
+void USGM_PredictedCollisionNotifyState::MarkTargetProcessed(USkeletalMeshComponent* MeshComp, AActor* TargetActor)
 {
 	if (!MeshComp || !TargetActor) return;
 
 	FSGM_PredictedCollisionRuntimeWindow& Window = ActiveWindowsByMesh.FindOrAdd(MeshComp);
 	Window.ProcessedTargets.Add(TargetActor);
+	
+	Window.PredictionKey = NextPredictionKey++;
+	if (Window.PredictionKey <= 0)
+	{
+		Window.PredictionKey = 1;
+		NextPredictionKey = 2;
+	}
+
+	AActor* OwnerActor = MeshComp->GetOwner();
+	UE_LOG(LogTemp, Warning, TEXT("SGM_COLLISION_KEY BEGIN Owner=%s NetMode=%d Auth=%d Key=%d"),
+		*GetNameSafe(OwnerActor), MeshComp->GetWorld() ? static_cast<int32>(MeshComp->GetWorld()->GetNetMode()) : -1,
+		OwnerActor ? OwnerActor->HasAuthority() : false, Window.PredictionKey);
+	
+	if (!ShouldRunCollision(OwnerActor)) return;
 }

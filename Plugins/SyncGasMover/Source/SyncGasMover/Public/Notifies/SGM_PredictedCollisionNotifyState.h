@@ -22,6 +22,7 @@ enum class ESGM_PredictedCollisionShape : uint8
 // We track already-hit targets so one sword swing does not hit the same actor every tick.
 struct FSGM_PredictedCollisionRuntimeWindow
 {
+	int32 PredictionKey = 0;
 	TSet<TWeakObjectPtr<AActor>> ProcessedTargets;
 };
 
@@ -94,14 +95,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SyncGasMover|Debug")
 	bool bDrawDebug = false;
 
-	// Native hook first. Next chunks can add prediction logic here without touching the sweep code.
-	virtual void HandlePredictedCollisionHit(AActor* OwningActor, AActor* HitActor, const FHitResult& HitResult);
+	virtual void HandlePredictedCollisionHit(AActor* OwningActor, AActor* HitActor, const FHitResult& HitResult,
+	int32 PredictionKey);
 
 	// This fires on the server and on the locally controlled attacking client.
 	// Later we can replace or extend this with predicted reaction/correction code.
 	UFUNCTION(BlueprintImplementableEvent, Category = "SyncGasMover|Collision", meta = (DisplayName = "On Predicted Collision Hit"))
 	void OnPredictedCollisionHit(AActor* OwningActor, AActor* HitActor, const FHitResult& HitResult,
-		FGameplayTag ReactionTag) const;
+		FGameplayTag ReactionTag, int32 PredictionKey) const;
 
 private:
 	bool ShouldRunCollision(const AActor* OwnerActor) const;
@@ -116,6 +117,9 @@ private:
 
 	bool HasAlreadyProcessedTarget(const USkeletalMeshComponent* MeshComp, const AActor* TargetActor) const;
 	void MarkTargetProcessed(USkeletalMeshComponent* MeshComp, AActor* TargetActor);
+	
+	// Notify state objects are shared, so we key runtime state by mesh.
+	int32 NextPredictionKey = 1;
 
 	// Notify state objects are shared, so we key runtime state by mesh.
 	TMap<TWeakObjectPtr<USkeletalMeshComponent>, FTransform> PreviousTransforms;
