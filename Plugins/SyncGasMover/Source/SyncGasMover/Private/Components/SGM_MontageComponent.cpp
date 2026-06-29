@@ -247,8 +247,8 @@ bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMonta
 		return StartReplicatedMontage(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG StartReplicatedMontage ENTER %s Montage=%s Start=%.3f PlayRate=%.3f OldSerial=%d"),
-		*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), InStartTimeSeconds, InPlayRate, RepMontageState.Serial);
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG StartReplicatedMontage ENTER %s Montage=%s Start=%.3f PlayRate=%.3f OldSerial=%d AttackInstanceKey=%d"),
+		*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), InStartTimeSeconds, InPlayRate, RepMontageState.Serial, RepMontageState.AttackInstanceKey);
 
 	ResolveMeshComponent();
 	if (MontageMeshComponent)
@@ -537,8 +537,8 @@ bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, floa
 	RefreshInitialContactBlockState();
 
 	SetComponentTickEnabled(true);
-	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG StartReplicatedMontage SUCCESS %s Montage=%s NewSerial=%d RootMotionScale=%.3f"),
-		*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), RepMontageState.Serial, RepMontageState.RootMotionScale);
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG StartReplicatedMontage SUCCESS %s Montage=%s NewSerial=%d AttackInstanceKey=%d RootMotionScale=%.3f"),
+		*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), RepMontageState.Serial, RepMontageState.AttackInstanceKey, RepMontageState.RootMotionScale);
 
 	return true;
 }
@@ -546,9 +546,9 @@ bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, floa
 void USGM_MontageComponent::ServerPlayReplicatedMontage_Implementation(UAnimMontage* InMontage, float InPlayRate,
 	float InStartTimeSeconds, FName InStartSection, int32 InAttackInstanceKey)
 {
-	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG ServerPlayReplicatedMontage ENTER %s Montage=%s Start=%.3f PlayRate=%.3f CurrentSerial=%d IsPlaying=%d CurrentMontage=%s"),
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG ServerPlayReplicatedMontage ENTER %s Montage=%s Start=%.3f PlayRate=%.3f CurrentSerial=%d AttackInstanceKey=%d IncomingAttackInstanceKey=%d IsPlaying=%d CurrentMontage=%s"),
 		*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), InStartTimeSeconds, InPlayRate,
-		RepMontageState.Serial, RepMontageState.bIsPlaying, *GetNameSafe(RepMontageState.Montage));
+		RepMontageState.Serial, RepMontageState.AttackInstanceKey, InAttackInstanceKey, RepMontageState.bIsPlaying, *GetNameSafe(RepMontageState.Montage));
 
 	if (RepMontageState.bIsPlaying
 		&& RepMontageState.Montage == InMontage
@@ -619,9 +619,9 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 	if (!AnimInstance) return;
 
 	const bool bHasNewMontageCommand = LastAppliedMontageSerial != RepMontageState.Serial;
-	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG OnRep_RepMontageState ENTER %s Montage=%s Serial=%d LastSerial=%d NewCmd=%d IsPlaying=%d Disabled=%d Scale=%.3f DisableSerial=%d LastDisable=%d ScaleSerial=%d LastScale=%d"),
+	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG OnRep_RepMontageState ENTER %s Montage=%s Serial=%d LastSerial=%d AttackInstanceKey=%d NewCmd=%d IsPlaying=%d Disabled=%d Scale=%.3f DisableSerial=%d LastDisable=%d ScaleSerial=%d LastScale=%d"),
 		*SGMLogActorState(this, GetOwner()), *GetNameSafe(RepMontageState.Montage),
-		RepMontageState.Serial, LastAppliedMontageSerial, bHasNewMontageCommand,
+		RepMontageState.Serial, LastAppliedMontageSerial, RepMontageState.AttackInstanceKey, bHasNewMontageCommand,
 		RepMontageState.bIsPlaying, RepMontageState.bRootMotionDisabled, RepMontageState.RootMotionScale,
 		RepMontageState.DisableRootMotionSerial, LastAppliedDisableRootMotionSerial,
 		RepMontageState.RootMotionScaleSerial, LastAppliedRootMotionScaleSerial);
