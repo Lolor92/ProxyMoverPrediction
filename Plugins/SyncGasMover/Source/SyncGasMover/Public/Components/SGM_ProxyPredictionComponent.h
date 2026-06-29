@@ -22,6 +22,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Reaction")
 	bool PlayPredictedReactionOnTargetProxy(AActor* TargetActor, FGameplayTag ReactionTag, FName NotifyWindowId);
 
+	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Reaction")
+	bool PlayAuthoritativeReactionOnTarget(AActor* TargetActor, FGameplayTag ReactionTag, FName NotifyWindowId);
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SyncGasMover|Reaction")
 	TObjectPtr<USGM_ReactionData> ReactionData = nullptr;

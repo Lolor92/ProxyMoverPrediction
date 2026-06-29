@@ -155,6 +155,15 @@ void USGM_PredictedCollisionNotifyState::HandlePredictedCollisionHit(AActor* Own
 		}
 	}
 
+	if (OwningActor && OwningActor->HasAuthority() && PredictedReactionTag.IsValid())
+	{
+		if (USGM_ProxyPredictionComponent* PredictionComponent =
+			OwningActor->FindComponentByClass<USGM_ProxyPredictionComponent>())
+		{
+			PredictionComponent->PlayAuthoritativeReactionOnTarget(HitActor, PredictedReactionTag, InNotifyWindowId);
+		}
+	}
+
 	// Keep the Blueprint hook for hit effects, logs, and quick iteration.
 	OnPredictedCollisionHit(OwningActor, HitActor, HitResult, PredictedReactionTag, InNotifyWindowId);
 	

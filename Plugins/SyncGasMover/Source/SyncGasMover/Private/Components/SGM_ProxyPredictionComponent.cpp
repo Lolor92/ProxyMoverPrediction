@@ -106,3 +106,82 @@ bool USGM_ProxyPredictionComponent::PlayPredictedReactionOnTargetProxy(AActor* I
 
 	return bPlayed;
 }
+
+bool USGM_ProxyPredictionComponent::PlayAuthoritativeReactionOnTarget(AActor* TargetActor, FGameplayTag ReactionTag, FName NotifyWindowId)
+{
+UE_LOG(LogTemp, Warning,
+TEXT("SGM_REACTION_SERVER_LOOKUP Owner=%s Target=%s Tag=%s NetMode=%d Auth=%d NotifyWindowId=%s"),
+*GetNameSafe(GetOwner()),
+*GetNameSafe(TargetActor),
+*ReactionTag.ToString(),
+GetWorld() ? static_cast<int32>(GetWorld()->GetNetMode()) : -1,
+GetOwner() ? GetOwner()->HasAuthority() : false,
+*NotifyWindowId.ToString());
+
+if (!GetOwner() || !GetOwner()->HasAuthority())
+{
+UE_LOG(LogTemp, Warning,
+TEXT("SGM_REACTION_SERVER_SKIP NotAuthority Owner=%s Target=%s NotifyWindowId=%s"),
+*GetNameSafe(GetOwner()),
+*GetNameSafe(TargetActor),
+*NotifyWindowId.ToString());
+return false;
+}
+
+if (!TargetActor || !ReactionData || !ReactionTag.IsValid())
+{
+return false;
+}
+
+FSGM_ReactionDataEntry Reaction;
+if (!ReactionData->FindReaction(ReactionTag, Reaction))
+{
+UE_LOG(LogTemp, Warning,
+TEXT("SGM_REACTION_SERVER_SKIP MissingReactionData Target=%s Tag=%s NotifyWindowId=%s"),
+*GetNameSafe(TargetActor),
+*ReactionTag.ToString(),
+*NotifyWindowId.ToString());
+return false;
+}
+
+if (!Reaction.Montage)
+{
+UE_LOG(LogTemp, Warning,
+TEXT("SGM_REACTION_SERVER_SKIP MissingMontage Target=%s Tag=%s NotifyWindowId=%s"),
+*GetNameSafe(TargetActor),
+*ReactionTag.ToString(),
+*NotifyWindowId.ToString());
+return false;
+}
+
+USGM_MontageComponent* MontageComponent = TargetActor->FindComponentByClass<USGM_MontageComponent>();
+if (!MontageComponent)
+{
+UE_LOG(LogTemp, Warning,
+TEXT("SGM_REACTION_SERVER_SKIP MissingMontageComponent Target=%s Tag=%s Montage=%s NotifyWindowId=%s"),
+*GetNameSafe(TargetActor),
+*ReactionTag.ToString(),
+*GetNameSafe(Reaction.Montage),
+*NotifyWindowId.ToString());
+return false;
+}
+
+const bool bPlayed = MontageComponent->StartReplicatedMontage(
+Reaction.Montage,
+Reaction.PlayRate,
+0.0f,
+Reaction.StartSection);
+
+UE_LOG(LogTemp, Warning,
+TEXT("SGM_REACTION_SERVER_PLAY Target=%s Tag=%s Montage=%s PlayRate=%.3f Section=%s Played=%d NotifyWindowId=%s"),
+*GetNameSafe(TargetActor),
+*ReactionTag.ToString(),
+*GetNameSafe(Reaction.Montage),
+Reaction.PlayRate,
+*Reaction.StartSection.ToString(),
+bPlayed,
+*NotifyWindowId.ToString());
+
+return bPlayed;
+}
+
