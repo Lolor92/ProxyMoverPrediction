@@ -17,7 +17,18 @@ void USGM_PredictedCollisionNotifyState::NotifyBegin(USkeletalMeshComponent* Mes
 	Window.ProcessedTargets.Reset();
 
 	AActor* OwnerActor = MeshComp->GetOwner();
-	if (!ShouldRunCollision(OwnerActor)) return;
+	const bool bShouldRunCollision = ShouldRunCollision(OwnerActor);
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("SGM_COLLISION_NOTIFY_BEGIN_RAW Mesh=%s Owner=%s NetMode=%d Auth=%d LocalPawn=%d ShouldRun=%d"),
+		*GetNameSafe(MeshComp),
+		*GetNameSafe(OwnerActor),
+		MeshComp->GetWorld() ? static_cast<int32>(MeshComp->GetWorld()->GetNetMode()) : -1,
+		OwnerActor ? OwnerActor->HasAuthority() : false,
+		Cast<APawn>(OwnerActor) ? Cast<APawn>(OwnerActor)->IsLocallyControlled() : false,
+		bShouldRunCollision);
+
+	if (!bShouldRunCollision) return;
 	
 	Window.PredictionKey = NextPredictionKey++;
 	if (Window.PredictionKey <= 0)
