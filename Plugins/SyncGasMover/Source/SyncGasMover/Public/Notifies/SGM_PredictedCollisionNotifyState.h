@@ -111,6 +111,8 @@ protected:
 private:
 	bool ShouldRunCollision(const AActor* OwnerActor) const;
 	FName ResolveNotifyWindowId(const UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) const;
+	int32 ResolveAttackInstanceKey(const USkeletalMeshComponent* MeshComp, FName ResolvedNotifyWindowId) const;
+	FName BuildFullCollisionWindowKey(const USkeletalMeshComponent* MeshComp, FName ResolvedNotifyWindowId) const;
 	bool BuildTraceTransform(const USkeletalMeshComponent* MeshComp, FTransform& OutTransform) const;
 	FCollisionShape MakeCollisionShape() const;
 
@@ -126,4 +128,7 @@ private:
 	// Notify state objects are shared, so we key runtime state by mesh.
 	TMap<TWeakObjectPtr<USkeletalMeshComponent>, FTransform> PreviousTransforms;
 	TMap<TWeakObjectPtr<USkeletalMeshComponent>, FSGM_PredictedCollisionRuntimeWindow> ActiveWindowsByMesh;
+
+	static TMap<TWeakObjectPtr<const USkeletalMeshComponent>, int32> CurrentAttackInstanceKeysByMesh;
+	static TMap<TWeakObjectPtr<const USkeletalMeshComponent>, int32> NextAttackInstanceKeysByMesh;
 };
