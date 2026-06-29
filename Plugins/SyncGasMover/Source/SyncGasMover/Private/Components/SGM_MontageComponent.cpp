@@ -754,10 +754,19 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 				bAlreadyPlayingSameMontage ? AnimInstance->Montage_GetPosition(RepMontageState.Montage) : -1.0f,
 				RepMontageState.StartTimeSeconds);
 
-			if (!(bIsAutonomousProxy && bAlreadyPlayingSameMontage))
+			if (!bAlreadyPlayingSameMontage)
 			{
 				PlayMontageLocal(RepMontageState.Montage, RepMontageState.PlayRate,
 					RepMontageState.StartTimeSeconds, RepMontageState.StartSection);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG OnRep PLAY_SKIP_ALREADY_PLAYING %s Montage=%s Autonomous=%d AnimPos=%.3f RepStart=%.3f"),
+					*SGMLogActorState(this, OwnerActor),
+					*GetNameSafe(RepMontageState.Montage),
+					bIsAutonomousProxy,
+					AnimInstance->Montage_GetPosition(RepMontageState.Montage),
+					RepMontageState.StartTimeSeconds);
 			}
 
 			if (ShouldDrivePredictedRootMotionControl())
