@@ -767,6 +767,20 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 					bIsAutonomousProxy,
 					AnimInstance->Montage_GetPosition(RepMontageState.Montage),
 					RepMontageState.StartTimeSeconds);
+
+				// If this simulated proxy started the local predicted mesh-offset reaction before
+				// the server montage arrived, stop only the extra visual offset layer now.
+				// The montage itself keeps playing, and the server authoritative movement can take over.
+				if (!bIsAutonomousProxy
+					&& bLocalProxyReactionPlaying
+					&& LocalProxyReactionMontage == RepMontageState.Montage)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("SGM_REACTION_PROXY_ROOTMOTION_CLEAR_ON_SERVER_ACK %s Montage=%s"),
+						*SGMLogActorState(this, OwnerActor),
+						*GetNameSafe(RepMontageState.Montage));
+
+					ClearLocalProxyReactionMontage();
+				}
 			}
 
 			if (ShouldDrivePredictedRootMotionControl())
