@@ -70,8 +70,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Montage")
 	bool StopMontageLocal(UAnimMontage* InMontage);
 
+
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Montage")
-	bool PlayMontageVisualOnlyLocal(UAnimMontage* InMontage, float InPlayRate = 1.0f,
+	bool PlayPredictedProxyReactionMontage(UAnimMontage* InMontage, float InPlayRate = 1.0f,
 		float InStartTimeSeconds = 0.0f, FName InStartSection = NAME_None);
 
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Montage")

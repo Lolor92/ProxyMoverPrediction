@@ -198,41 +198,53 @@ bool USGM_MontageComponent::StopMontageLocal(UAnimMontage* InMontage)
 	return true;
 }
 
-bool USGM_MontageComponent::PlayMontageVisualOnlyLocal(UAnimMontage* InMontage, float InPlayRate,
-	float InStartTimeSeconds, FName InStartSection)
+
+
+bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(UAnimMontage* InMontage, float InPlayRate,
+float InStartTimeSeconds, FName InStartSection)
 {
-	if (!InMontage) return false;
-
-	ResolveMeshComponent();
-	if (!MontageMeshComponent) return false;
-
-	UAnimInstance* AnimInstance = MontageMeshComponent->GetAnimInstance();
-	if (!AnimInstance) return false;
-
-	const float MontageLength = InMontage->GetPlayLength();
-	const float ClampedStartTime = FMath::Clamp(
-		InStartTimeSeconds,
-		0.0f,
-		FMath::Max(0.0f, MontageLength - KINDA_SMALL_NUMBER));
-
-	const float PlayedLength = AnimInstance->Montage_Play(InMontage, InPlayRate,
-		EMontagePlayReturnType::MontageLength, ClampedStartTime, true);
-
-	if (PlayedLength <= 0.0f) return false;
-
-	if (InStartSection != NAME_None)
-	{
-		AnimInstance->Montage_JumpToSection(InStartSection, InMontage);
-	}
-
-	if (FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(InMontage))
-	{
-		MontageInstance->PushDisableRootMotion();
-	}
-
-	SetComponentTickEnabled(true);
-	return true;
+AActor* OwnerActor = GetOwner();
+if (!OwnerActor || !InMontage)
+{
+return false;
 }
+
+const UWorld* World = GetWorld();
+if (!World || World->GetNetMode() != NM_Client)
+{
+UE_LOG(LogTemp, Warning,
+TEXT("SGM_REACTION_PROXY_MONTAGE_SKIP NotClient %s Montage=%s NetMode=%d"),
+*SGMLogActorState(this, OwnerActor),
+*GetNameSafe(InMontage),
+World ? static_cast<int32>(World->GetNetMode()) : -1);
+return false;
+}
+
+const APawn* OwnerPawn = Cast<APawn>(OwnerActor);
+if (!OwnerPawn || OwnerPawn->IsLocallyControlled() || OwnerActor->GetLocalRole() != ROLE_SimulatedProxy)
+{
+UE_LOG(LogTemp, Warning,
+TEXT("SGM_REACTION_PROXY_MONTAGE_SKIP NotSimProxy %s Montage=%s"),
+*SGMLogActorState(this, OwnerActor),
+*GetNameSafe(InMontage));
+return false;
+}
+
+const bool bPlayed = PlayMontageLocal(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
+
+UE_LOG(LogTemp, Warning,
+TEXT("SGM_REACTION_PROXY_MONTAGE_PLAY %s Montage=%s PlayRate=%.3f Start=%.3f Section=%s RootMotion=%d Played=%d"),
+*SGMLogActorState(this, OwnerActor),
+*GetNameSafe(InMontage),
+InPlayRate,
+InStartTimeSeconds,
+*InStartSection.ToString(),
+InMontage->HasRootMotion(),
+bPlayed);
+
+return bPlayed;
+}
+
 
 bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMontage, float InPlayRate,
 	float InStartTimeSeconds, FName InStartSection)
