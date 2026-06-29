@@ -124,6 +124,36 @@ FName USGM_PredictedCollisionNotifyState::ResolveNotifyWindowId(const UAnimSeque
 	return FName(*FString::Printf(TEXT("Auto_%03d"), NotifyIndex));
 }
 
+int32 USGM_PredictedCollisionNotifyState::ResolveAttackInstanceKey(const USkeletalMeshComponent* MeshComp,
+	FName ResolvedNotifyWindowId) const
+{
+	if (!MeshComp)
+	{
+		return 0;
+	}
+
+	const TWeakObjectPtr<const USkeletalMeshComponent> MeshKey(MeshComp);
+	const bool bStartsNewAttackInstance = ResolvedNotifyWindowId == FName(TEXT("Auto_000"))
+		|| !CurrentAttackInstanceKeysByMesh.Contains(MeshKey);
+
+	if (bStartsNewAttackInstance)
+	{
+		int32& NextKey = NextAttackInstanceKeysByMesh.FindOrAdd(MeshKey);
+		NextKey = (NextKey + 1) % 10000;
+		CurrentAttackInstanceKeysByMesh.FindOrAdd(MeshKey) = NextKey;
+	}
+
+	const int32* CurrentKey = CurrentAttackInstanceKeysByMesh.Find(MeshKey);
+	return CurrentKey ? FMath::Clamp(*CurrentKey, 0, 9999) : 0;
+}
+
+FName USGM_PredictedCollisionNotifyState::BuildFullCollisionWindowKey(const USkeletalMeshComponent* MeshComp,
+	FName ResolvedNotifyWindowId) const
+{
+	const int32 AttackInstanceKey = ResolveAttackInstanceKey(MeshComp, ResolvedNotifyWindowId);
+	return FName(*FString::Printf(TEXT("A%04d_%s"), AttackInstanceKey, *ResolvedNotifyWindowId.ToString()));
+}
+
 void USGM_PredictedCollisionNotifyState::HandlePredictedCollisionHit(AActor* OwningActor, AActor* HitActor,
 	const FHitResult& HitResult, FName InNotifyWindowId)
 {
