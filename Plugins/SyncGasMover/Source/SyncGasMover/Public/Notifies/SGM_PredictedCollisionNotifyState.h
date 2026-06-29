@@ -106,7 +106,7 @@ protected:
 	// Later we can replace or extend this with predicted reaction/correction code.
 	UFUNCTION(BlueprintImplementableEvent, Category = "SyncGasMover|Collision", meta = (DisplayName = "On Predicted Collision Hit"))
 	void OnPredictedCollisionHit(AActor* OwningActor, AActor* HitActor, const FHitResult& HitResult,
-		FGameplayTag ReactionTag, FName NotifyWindowId) const;
+		FGameplayTag ReactionTag, FName HitNotifyWindowId) const;
 
 private:
 	bool ShouldRunCollision(const AActor* OwnerActor) const;
