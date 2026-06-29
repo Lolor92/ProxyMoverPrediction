@@ -203,17 +203,58 @@ void USGM_PredictedCollisionNotifyState::SweepCollision(USkeletalMeshComponent* 
 		{
 			AActor* HitActor = Hit.GetActor();
 
-			if (!HitActor || HitActor == OwnerActor) continue;
+			UE_LOG(LogTemp, Warning,
+				TEXT("SGM_COLLISION_RAW_HIT Owner=%s HitActor=%s HitComponent=%s Blocking=%d bOnlyHitPawns=%d IsPawn=%d AlreadyProcessed=%d"),
+				*GetNameSafe(OwnerActor),
+				*GetNameSafe(HitActor),
+				*GetNameSafe(Hit.GetComponent()),
+				Hit.bBlockingHit,
+				bOnlyHitPawns,
+				HitActor ? HitActor->IsA<APawn>() : false,
+				HitActor ? HasAlreadyProcessedTarget(MeshComp, HitActor) : true);
 
-			if (bOnlyHitPawns && !HitActor->IsA<APawn>()) continue;
+			if (!HitActor)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("SGM_COLLISION_SKIP Null HitActor"));
+				continue;
+			}
 
-			if (HasAlreadyProcessedTarget(MeshComp, HitActor)) continue;
+			if (HitActor == OwnerActor)
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("SGM_COLLISION_SKIP Self HitActor=%s"),
+					*GetNameSafe(HitActor));
+				continue;
+			}
+
+			if (bOnlyHitPawns && !HitActor->IsA<APawn>())
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("SGM_COLLISION_SKIP NotPawn HitActor=%s Class=%s"),
+					*GetNameSafe(HitActor),
+					*GetNameSafe(HitActor->GetClass()));
+				continue;
+			}
+
+			if (HasAlreadyProcessedTarget(MeshComp, HitActor))
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("SGM_COLLISION_SKIP AlreadyProcessed HitActor=%s"),
+					*GetNameSafe(HitActor));
+				continue;
+			}
 
 			MarkTargetProcessed(MeshComp, HitActor);
-			
+
 			const FSGM_PredictedCollisionRuntimeWindow* Window = ActiveWindowsByMesh.Find(MeshComp);
 			const int32 PredictionKey = Window ? Window->PredictionKey : 0;
-			
+
+			UE_LOG(LogTemp, Warning,
+				TEXT("SGM_COLLISION_ACCEPT Owner=%s Target=%s Key=%d"),
+				*GetNameSafe(OwnerActor),
+				*GetNameSafe(HitActor),
+				PredictionKey);
+
 			HandlePredictedCollisionHit(OwnerActor, HitActor, Hit, PredictionKey);
 		}
 	}
