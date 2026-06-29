@@ -1,6 +1,7 @@
 #include "Notifies/SGM_PredictedCollisionNotifyState.h"
 #include "Components/SGM_ProxyPredictionComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimSequenceBase.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -81,6 +82,43 @@ void USGM_PredictedCollisionNotifyState::NotifyEnd(USkeletalMeshComponent* MeshC
 FString USGM_PredictedCollisionNotifyState::GetNotifyName_Implementation() const
 {
 	return TEXT("PredictedCollisionNotify");
+}
+
+FName USGM_PredictedCollisionNotifyState::ResolveNotifyWindowId(const UAnimSequenceBase* Animation,
+	const FAnimNotifyEventReference& EventReference) const
+{
+	if (!NotifyWindowId.IsNone())
+	{
+		return NotifyWindowId;
+	}
+
+	const FAnimNotifyEvent* CurrentNotify = EventReference.GetNotify();
+	int32 NotifyIndex = INDEX_NONE;
+
+	if (Animation && CurrentNotify)
+	{
+		int32 CollisionWindowIndex = 0;
+
+		for (const FAnimNotifyEvent& CandidateNotify : Animation->Notifies)
+		{
+			const UAnimNotifyState* CandidateState = CandidateNotify.NotifyStateClass;
+			if (!CandidateState || CandidateState->GetClass() != GetClass())
+			{
+				continue;
+			}
+
+			if (&CandidateNotify == CurrentNotify)
+			{
+				NotifyIndex = CollisionWindowIndex;
+				break;
+			}
+
+			++CollisionWindowIndex;
+		}
+	}
+
+	NotifyIndex = FMath::Clamp(NotifyIndex == INDEX_NONE ? 0 : NotifyIndex, 0, 999);
+	return FName(*FString::Printf(TEXT("Auto_%03d"), NotifyIndex));
 }
 
 void USGM_PredictedCollisionNotifyState::HandlePredictedCollisionHit(AActor* OwningActor, AActor* HitActor,
