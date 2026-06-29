@@ -1,4 +1,3 @@
-﻿
 #pragma once
 
 #include "CoreMinimal.h"
@@ -22,7 +21,7 @@ enum class ESGM_PredictedCollisionShape : uint8
 // We track already-hit targets so one sword swing does not hit the same actor every tick.
 struct FSGM_PredictedCollisionRuntimeWindow
 {
-	int32 PredictionKey = 0;
+	FName NotifyWindowId = NAME_None;
 	TSet<TWeakObjectPtr<AActor>> ProcessedTargets;
 };
 
@@ -51,6 +50,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SyncGasMover|Predicted Reaction",
 		meta = (EditCondition = "bPlayPredictedReactionOnClient"))
 	FGameplayTag PredictedReactionTag;
+
+	// Stable id for this specific notify window inside a montage.
+	// Example: ShieldBash_Hit_01, ShieldBash_Hit_02.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SyncGasMover|Prediction")
+	FName NotifyWindowId = NAME_None;
 
 	// Socket to sweep from. For a weapon attack this should usually be a weapon or hand socket.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SyncGasMover|Socket")
@@ -96,13 +100,13 @@ protected:
 	bool bDrawDebug = false;
 
 	virtual void HandlePredictedCollisionHit(AActor* OwningActor, AActor* HitActor, const FHitResult& HitResult,
-	int32 PredictionKey);
+		FName InNotifyWindowId);
 
 	// This fires on the server and on the locally controlled attacking client.
 	// Later we can replace or extend this with predicted reaction/correction code.
 	UFUNCTION(BlueprintImplementableEvent, Category = "SyncGasMover|Collision", meta = (DisplayName = "On Predicted Collision Hit"))
 	void OnPredictedCollisionHit(AActor* OwningActor, AActor* HitActor, const FHitResult& HitResult,
-		FGameplayTag ReactionTag, int32 PredictionKey) const;
+		FGameplayTag ReactionTag, FName NotifyWindowId) const;
 
 private:
 	bool ShouldRunCollision(const AActor* OwnerActor) const;
@@ -119,8 +123,6 @@ private:
 	void MarkTargetProcessed(USkeletalMeshComponent* MeshComp, AActor* TargetActor);
 	
 	// Notify state objects are shared, so we key runtime state by mesh.
-	int32 NextPredictionKey = 1;
-	
 	TMap<TWeakObjectPtr<USkeletalMeshComponent>, FTransform> PreviousTransforms;
 	TMap<TWeakObjectPtr<USkeletalMeshComponent>, FSGM_PredictedCollisionRuntimeWindow> ActiveWindowsByMesh;
 };
