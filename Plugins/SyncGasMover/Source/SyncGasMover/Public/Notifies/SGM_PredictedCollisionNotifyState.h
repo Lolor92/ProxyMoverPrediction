@@ -120,8 +120,7 @@ private:
 	
 	// Notify state objects are shared, so we key runtime state by mesh.
 	int32 NextPredictionKey = 1;
-
-	// Notify state objects are shared, so we key runtime state by mesh.
+	
 	TMap<TWeakObjectPtr<USkeletalMeshComponent>, FTransform> PreviousTransforms;
 	TMap<TWeakObjectPtr<USkeletalMeshComponent>, FSGM_PredictedCollisionRuntimeWindow> ActiveWindowsByMesh;
 };

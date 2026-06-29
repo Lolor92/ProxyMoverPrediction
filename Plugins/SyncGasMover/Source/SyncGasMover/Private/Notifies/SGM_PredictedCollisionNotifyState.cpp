@@ -18,6 +18,20 @@ void USGM_PredictedCollisionNotifyState::NotifyBegin(USkeletalMeshComponent* Mes
 
 	AActor* OwnerActor = MeshComp->GetOwner();
 	if (!ShouldRunCollision(OwnerActor)) return;
+	
+	Window.PredictionKey = NextPredictionKey++;
+	if (Window.PredictionKey <= 0)
+	{
+		Window.PredictionKey = 1;
+		NextPredictionKey = 2;
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("SGM_COLLISION_KEY BEGIN Owner=%s NetMode=%d Auth=%d Key=%d"),
+		*GetNameSafe(OwnerActor),
+		MeshComp->GetWorld() ? static_cast<int32>(MeshComp->GetWorld()->GetNetMode()) : -1,
+		OwnerActor ? OwnerActor->HasAuthority() : false,
+		Window.PredictionKey);
 
 	FTransform CurrentTransform;
 	if (!BuildTraceTransform(MeshComp, CurrentTransform)) return;
@@ -240,18 +254,4 @@ void USGM_PredictedCollisionNotifyState::MarkTargetProcessed(USkeletalMeshCompon
 
 	FSGM_PredictedCollisionRuntimeWindow& Window = ActiveWindowsByMesh.FindOrAdd(MeshComp);
 	Window.ProcessedTargets.Add(TargetActor);
-	
-	Window.PredictionKey = NextPredictionKey++;
-	if (Window.PredictionKey <= 0)
-	{
-		Window.PredictionKey = 1;
-		NextPredictionKey = 2;
-	}
-
-	AActor* OwnerActor = MeshComp->GetOwner();
-	UE_LOG(LogTemp, Warning, TEXT("SGM_COLLISION_KEY BEGIN Owner=%s NetMode=%d Auth=%d Key=%d"),
-		*GetNameSafe(OwnerActor), MeshComp->GetWorld() ? static_cast<int32>(MeshComp->GetWorld()->GetNetMode()) : -1,
-		OwnerActor ? OwnerActor->HasAuthority() : false, Window.PredictionKey);
-	
-	if (!ShouldRunCollision(OwnerActor)) return;
 }
