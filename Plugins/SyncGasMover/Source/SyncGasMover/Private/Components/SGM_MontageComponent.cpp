@@ -789,6 +789,27 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 				return;
 			}
 
+			if (!bIsAutonomousProxy
+				&& bLocalProxyReactionClearPendingServerStop
+				&& LocalProxyReactionMontage == RepMontageState.Montage)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("SGM_REACTION_PROXY_ROOTMOTION_CLEAR_ON_SERVER_STOP %s Montage=%s LocalStillPlaying=%d"),
+					*SGMLogActorState(this, OwnerActor),
+					*GetNameSafe(RepMontageState.Montage),
+					bLocalSameMontageStillPlaying);
+
+				if (RepMontageState.Montage && bLocalSameMontageStillPlaying)
+				{
+					AnimInstance->Montage_Stop(RepMontageState.Montage->GetDefaultBlendOutTime(), RepMontageState.Montage);
+				}
+
+				bLocalProxyReactionClearPendingServerStop = false;
+				StartLocalProxyReactionClearBlend(0.12f);
+				ResetLocalRootMotionControlState();
+				SetComponentTickEnabled(true);
+				return;
+			}
+
 			if (RepMontageState.Montage && bLocalSameMontageStillPlaying)
 			{
 				AnimInstance->Montage_Stop(RepMontageState.Montage->GetDefaultBlendOutTime(), RepMontageState.Montage);
@@ -828,17 +849,17 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 					RepMontageState.StartTimeSeconds);
 
 				// If this simulated proxy started the local predicted mesh-offset reaction before
-				// the server montage arrived, stop only the extra visual offset layer now.
-				// The montage itself keeps playing, and the server authoritative movement can take over.
+				// the server montage arrived, keep it alive until the server sends the montage stop.
+				// Clearing on the play ack causes a visible high-ping tug while the server reaction is still moving.
 				if (!bIsAutonomousProxy
 					&& bLocalProxyReactionPlaying
 					&& LocalProxyReactionMontage == RepMontageState.Montage)
 				{
-					UE_LOG(LogTemp, Warning, TEXT("SGM_REACTION_PROXY_ROOTMOTION_BLEND_CLEAR_ON_SERVER_ACK %s Montage=%s"),
+					bLocalProxyReactionClearPendingServerStop = true;
+
+					UE_LOG(LogTemp, Warning, TEXT("SGM_REACTION_PROXY_ROOTMOTION_HOLD_UNTIL_SERVER_STOP %s Montage=%s"),
 						*SGMLogActorState(this, OwnerActor),
 						*GetNameSafe(RepMontageState.Montage));
-
-					StartLocalProxyReactionClearBlend(0.22f);
 				}
 			}
 
@@ -1403,6 +1424,7 @@ void USGM_MontageComponent::StartLocalProxyReactionClearBlend(float BlendDuratio
 		return;
 	}
 
+	bLocalProxyReactionClearPendingServerStop = false;
 	LocalProxyReactionClearStartMeshRelativeTransform = MontageMeshComponent->GetRelativeTransform();
 	LocalProxyReactionClearTargetMeshRelativeTransform = LocalProxyReactionOriginalMeshRelativeTransform;
 	LocalProxyReactionClearElapsedSeconds = 0.0f;
@@ -1470,6 +1492,7 @@ void USGM_MontageComponent::UpdateLocalProxyReactionClearBlend(float DeltaSecond
 
 void USGM_MontageComponent::ClearLocalProxyReactionMontage()
 {
+	bLocalProxyReactionClearPendingServerStop = false;
 	bLocalProxyReactionClearBlendActive = false;
 	LocalProxyReactionClearStartMeshRelativeTransform = FTransform::Identity;
 	LocalProxyReactionClearTargetMeshRelativeTransform = FTransform::Identity;

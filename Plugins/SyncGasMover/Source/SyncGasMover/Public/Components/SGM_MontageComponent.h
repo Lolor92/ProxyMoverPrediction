@@ -240,6 +240,7 @@ private:
 	FTransform LocalProxyReactionOriginalMeshRelativeTransform = FTransform::Identity;
 	float LocalProxyReactionStartPosition = 0.0f;
 	bool bLocalProxyReactionPlaying = false;
+	bool bLocalProxyReactionClearPendingServerStop = false;
 
 	FTransform LocalProxyReactionClearStartMeshRelativeTransform = FTransform::Identity;
 	FTransform LocalProxyReactionClearTargetMeshRelativeTransform = FTransform::Identity;
