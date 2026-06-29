@@ -838,7 +838,7 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 						*SGMLogActorState(this, OwnerActor),
 						*GetNameSafe(RepMontageState.Montage));
 
-					StartLocalProxyReactionClearBlend(0.12f);
+					StartLocalProxyReactionClearBlend(0.22f);
 				}
 			}
 
