@@ -234,5 +234,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimMontage> LocalProxyReactionMontage = nullptr;
 
+	float LocalProxyReactionPreviousPosition = 0.0f;
+	float LocalProxyReactionPlayRate = 1.0f;
 	bool bLocalProxyReactionPlaying = false;
 };

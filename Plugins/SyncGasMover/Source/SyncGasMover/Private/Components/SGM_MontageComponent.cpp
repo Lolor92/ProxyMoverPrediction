@@ -1,5 +1,5 @@
 #include "Components/SGM_MontageComponent.h"
-
+#include "MotionWarpingComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
@@ -199,7 +199,7 @@ bool USGM_MontageComponent::StopMontageLocal(UAnimMontage* InMontage)
 }
 
 bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(UAnimMontage* InMontage, float InPlayRate,
-float InStartTimeSeconds, FName InStartSection)
+	float InStartTimeSeconds, FName InStartSection)
 {
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor || !InMontage)
@@ -211,10 +211,10 @@ float InStartTimeSeconds, FName InStartSection)
 	if (!World || World->GetNetMode() != NM_Client)
 	{
 		UE_LOG(LogTemp, Warning,
-		TEXT("SGM_REACTION_PROXY_MONTAGE_SKIP NotClient %s Montage=%s NetMode=%d"),
-		*SGMLogActorState(this, OwnerActor),
-		*GetNameSafe(InMontage),
-		World ? static_cast<int32>(World->GetNetMode()) : -1);
+			TEXT("SGM_REACTION_PROXY_MONTAGE_SKIP NotClient %s Montage=%s NetMode=%d"),
+			*SGMLogActorState(this, OwnerActor),
+			*GetNameSafe(InMontage),
+			World ? static_cast<int32>(World->GetNetMode()) : -1);
 		return false;
 	}
 
@@ -222,34 +222,81 @@ float InStartTimeSeconds, FName InStartSection)
 	if (!OwnerPawn || OwnerPawn->IsLocallyControlled() || OwnerActor->GetLocalRole() != ROLE_SimulatedProxy)
 	{
 		UE_LOG(LogTemp, Warning,
-		TEXT("SGM_REACTION_PROXY_MONTAGE_SKIP NotSimProxy %s Montage=%s"),
-		*SGMLogActorState(this, OwnerActor),
-		*GetNameSafe(InMontage));
+			TEXT("SGM_REACTION_PROXY_MONTAGE_SKIP NotSimProxy %s Montage=%s"),
+			*SGMLogActorState(this, OwnerActor),
+			*GetNameSafe(InMontage));
 		return false;
 	}
 
-	const bool bPlayed = PlayMontageLocal(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
-
-	if (bPlayed)
+	ResolveMeshComponent();
+	if (!MontageMeshComponent)
 	{
-		LocalProxyReactionMontage = InMontage;
-		bLocalProxyReactionPlaying = true;
-		SetComponentTickEnabled(true);
+		return false;
 	}
 
+	UAnimInstance* AnimInstance = MontageMeshComponent->GetAnimInstance();
+	if (!AnimInstance)
+	{
+		return false;
+	}
+
+	const float MontageLength = InMontage->GetPlayLength();
+	const float ClampedStartTime = FMath::Clamp(
+		InStartTimeSeconds,
+		0.0f,
+		FMath::Max(0.0f, MontageLength - KINDA_SMALL_NUMBER));
+
+	const float PlayedLength = AnimInstance->Montage_Play(
+		InMontage,
+		InPlayRate,
+		EMontagePlayReturnType::MontageLength,
+		ClampedStartTime,
+		true);
+
+	if (PlayedLength <= 0.0f)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("SGM_REACTION_PROXY_MONTAGE_FAIL PlayedLength=%.3f %s Montage=%s Start=%.3f PlayRate=%.3f"),
+			PlayedLength,
+			*SGMLogActorState(this, OwnerActor),
+			*GetNameSafe(InMontage),
+			ClampedStartTime,
+			InPlayRate);
+		return false;
+	}
+
+	if (InStartSection != NAME_None)
+	{
+		AnimInstance->Montage_JumpToSection(InStartSection, InMontage);
+	}
+
+	if (FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(InMontage))
+	{
+		MontageInstance->PushDisableRootMotion();
+		LocalProxyReactionPreviousPosition = MontageInstance->GetPosition();
+	}
+	else
+	{
+		LocalProxyReactionPreviousPosition = ClampedStartTime;
+	}
+
+	LocalProxyReactionMontage = InMontage;
+	LocalProxyReactionPlayRate = InPlayRate;
+	bLocalProxyReactionPlaying = true;
+
+	SetComponentTickEnabled(true);
+
 	UE_LOG(LogTemp, Warning,
-	TEXT("SGM_REACTION_PROXY_MONTAGE_PLAY %s Montage=%s PlayRate=%.3f Start=%.3f Section=%s RootMotion=%d Played=%d"),
-	*SGMLogActorState(this, OwnerActor),
-	*GetNameSafe(InMontage),
-	InPlayRate,
-	InStartTimeSeconds,
-	*InStartSection.ToString(),
-	InMontage->HasRootMotion(),
-	bPlayed);
+		TEXT("SGM_REACTION_PROXY_MONTAGE_PLAY %s Montage=%s PlayRate=%.3f Start=%.3f Section=%s RootMotion=%d Played=1 DirectProxyRM=1"),
+		*SGMLogActorState(this, OwnerActor),
+		*GetNameSafe(InMontage),
+		InPlayRate,
+		ClampedStartTime,
+		*InStartSection.ToString(),
+		InMontage->HasRootMotion());
 
-	return bPlayed;
+	return true;
 }
-
 
 bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMontage, float InPlayRate,
 	float InStartTimeSeconds, FName InStartSection)
@@ -1174,25 +1221,71 @@ void USGM_MontageComponent::UpdateLocalProxyReactionMontage()
 		return;
 	}
 
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !LocalProxyReactionMontage)
+	{
+		ClearLocalProxyReactionMontage();
+		return;
+	}
+
 	ResolveMeshComponent();
 
 	UAnimInstance* AnimInstance = MontageMeshComponent ? MontageMeshComponent->GetAnimInstance() : nullptr;
-	if (!AnimInstance || !LocalProxyReactionMontage || !AnimInstance->Montage_IsPlaying(LocalProxyReactionMontage))
+	FAnimMontageInstance* MontageInstance = AnimInstance
+		? AnimInstance->GetActiveInstanceForMontage(LocalProxyReactionMontage)
+		: nullptr;
+
+	if (!AnimInstance || !MontageInstance || !AnimInstance->Montage_IsPlaying(LocalProxyReactionMontage))
 	{
 		UE_LOG(LogTemp, Warning,
 			TEXT("SGM_REACTION_PROXY_MONTAGE_ENDED %s Montage=%s"),
-			*SGMLogActorState(this, GetOwner()),
+			*SGMLogActorState(this, OwnerActor),
 			*GetNameSafe(LocalProxyReactionMontage));
 
 		ClearLocalProxyReactionMontage();
 		return;
 	}
+
+	const float CurrentPosition = MontageInstance->GetPosition();
+	const float PreviousPosition = LocalProxyReactionPreviousPosition;
+
+	if (CurrentPosition > PreviousPosition && LocalProxyReactionMontage->HasRootMotion())
+	{
+		const FTransform LocalRootMotion = UMotionWarpingUtilities::ExtractRootMotionFromAnimation(
+			LocalProxyReactionMontage,
+			PreviousPosition,
+			CurrentPosition);
+
+		const FTransform ActorTransform = OwnerActor->GetActorTransform();
+		const FTransform WorldRootMotion = LocalRootMotion * ActorTransform;
+
+		const FVector DeltaLocation = WorldRootMotion.GetLocation() - ActorTransform.GetLocation();
+		const FQuat DeltaRotation = WorldRootMotion.GetRotation() * ActorTransform.GetRotation().Inverse();
+
+		if (!DeltaLocation.IsNearlyZero() || !DeltaRotation.IsIdentity())
+		{
+			OwnerActor->AddActorWorldOffset(DeltaLocation, true);
+			OwnerActor->AddActorWorldRotation(DeltaRotation, false);
+
+			UE_LOG(LogTemp, Warning,
+				TEXT("SGM_REACTION_PROXY_ROOTMOTION_STEP %s Montage=%s %.3f->%.3f Delta=%s"),
+				*SGMLogActorState(this, OwnerActor),
+				*GetNameSafe(LocalProxyReactionMontage),
+				PreviousPosition,
+				CurrentPosition,
+				*DeltaLocation.ToString());
+		}
+	}
+
+	LocalProxyReactionPreviousPosition = CurrentPosition;
 }
 
 void USGM_MontageComponent::ClearLocalProxyReactionMontage()
 {
 	LocalProxyReactionMontage = nullptr;
 	bLocalProxyReactionPlaying = false;
+	LocalProxyReactionPreviousPosition = 0.0f;
+	LocalProxyReactionPlayRate = 1.0f;
 
 #if !UE_BUILD_SHIPPING
 	SetComponentTickEnabled(true);
