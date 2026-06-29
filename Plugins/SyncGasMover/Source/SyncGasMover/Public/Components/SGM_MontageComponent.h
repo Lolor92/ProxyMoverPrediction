@@ -34,6 +34,9 @@ struct FSGMRepMontageState
 	float StartTimeSeconds = 0.0f;
 
 	UPROPERTY()
+	float ServerStartWorldTimeSeconds = 0.0f;
+
+	UPROPERTY()
 	FName StartSection = NAME_None;
 
 	UPROPERTY()

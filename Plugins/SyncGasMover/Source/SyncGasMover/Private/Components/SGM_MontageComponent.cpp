@@ -3,6 +3,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
+#include "GameFramework/GameStateBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/Engine.h"
@@ -444,6 +445,16 @@ bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMonta
 	RepMontageState.Montage = InMontage;
 	RepMontageState.PlayRate = InPlayRate;
 	RepMontageState.StartTimeSeconds = InStartTimeSeconds;
+
+	RepMontageState.ServerStartWorldTimeSeconds = 0.0f;
+	if (const UWorld* World = GetWorld())
+	{
+		if (const AGameStateBase* GameState = World->GetGameState<AGameStateBase>())
+		{
+			RepMontageState.ServerStartWorldTimeSeconds = GameState->GetServerWorldTimeSeconds();
+		}
+	}
+
 	RepMontageState.StartSection = InStartSection;
 	RepMontageState.bIsPlaying = true;
 	RepMontageState.bRootMotionDisabled = false;
@@ -677,6 +688,16 @@ bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, floa
 	RepMontageState.Montage = InMontage;
 	RepMontageState.PlayRate = InPlayRate;
 	RepMontageState.StartTimeSeconds = InStartTimeSeconds;
+
+	RepMontageState.ServerStartWorldTimeSeconds = 0.0f;
+	if (const UWorld* World = GetWorld())
+	{
+		if (const AGameStateBase* GameState = World->GetGameState<AGameStateBase>())
+		{
+			RepMontageState.ServerStartWorldTimeSeconds = GameState->GetServerWorldTimeSeconds();
+		}
+	}
+
 	RepMontageState.StartSection = InStartSection;
 	RepMontageState.bIsPlaying = true;
 	RepMontageState.bRootMotionDisabled = false;
@@ -841,16 +862,45 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 			const bool bIsAutonomousProxy = OwnerActor && OwnerActor->GetLocalRole() == ROLE_AutonomousProxy;
 			const bool bAlreadyPlayingSameMontage = AnimInstance->Montage_IsPlaying(RepMontageState.Montage);
 
-			UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG OnRep PLAY_CMD %s Montage=%s Autonomous=%d AlreadyPlaying=%d AnimPos=%.3f RepStart=%.3f"),
+			float EffectiveRepStartTimeSeconds = RepMontageState.StartTimeSeconds;
+			float ServerElapsedSeconds = 0.0f;
+
+			// For non-predicted remote plays, the replicated command arrives late at high ping.
+			// Start from the estimated current server montage position instead of replaying from 0.
+			if (!bAlreadyPlayingSameMontage && RepMontageState.ServerStartWorldTimeSeconds > 0.0f)
+			{
+				if (const UWorld* World = GetWorld())
+				{
+					if (const AGameStateBase* GameState = World->GetGameState<AGameStateBase>())
+					{
+						ServerElapsedSeconds = FMath::Max(0.0f, GameState->GetServerWorldTimeSeconds() - RepMontageState.ServerStartWorldTimeSeconds);
+						EffectiveRepStartTimeSeconds = RepMontageState.StartTimeSeconds + (ServerElapsedSeconds * FMath::Max(0.0f, RepMontageState.PlayRate));
+					}
+				}
+			}
+
+			if (RepMontageState.Montage)
+			{
+				const float MontageLength = RepMontageState.Montage->GetPlayLength();
+				EffectiveRepStartTimeSeconds = FMath::Clamp(
+					EffectiveRepStartTimeSeconds,
+					0.0f,
+					FMath::Max(0.0f, MontageLength - KINDA_SMALL_NUMBER));
+			}
+
+			UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG OnRep PLAY_CMD %s Montage=%s Autonomous=%d AlreadyPlaying=%d AnimPos=%.3f RepStart=%.3f EffectiveStart=%.3f ServerElapsed=%.3f ServerStart=%.3f"),
 				*SGMLogActorState(this, OwnerActor), *GetNameSafe(RepMontageState.Montage),
 				bIsAutonomousProxy, bAlreadyPlayingSameMontage,
 				bAlreadyPlayingSameMontage ? AnimInstance->Montage_GetPosition(RepMontageState.Montage) : -1.0f,
-				RepMontageState.StartTimeSeconds);
+				RepMontageState.StartTimeSeconds,
+				EffectiveRepStartTimeSeconds,
+				ServerElapsedSeconds,
+				RepMontageState.ServerStartWorldTimeSeconds);
 
 			if (!bAlreadyPlayingSameMontage)
 			{
 				PlayMontageLocal(RepMontageState.Montage, RepMontageState.PlayRate,
-					RepMontageState.StartTimeSeconds, RepMontageState.StartSection);
+					EffectiveRepStartTimeSeconds, RepMontageState.StartSection);
 			}
 			else
 			{
