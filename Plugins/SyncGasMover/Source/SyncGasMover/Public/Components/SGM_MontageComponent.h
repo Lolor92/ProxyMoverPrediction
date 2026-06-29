@@ -200,6 +200,8 @@ private:
 	bool ApplyRootMotionScaleToCurrentMontage(float InRootMotionScale);
 	void SetReplicatedRootMotionScale(float InRootMotionScale);
 	void ResetLocalRootMotionControlState();
+	void UpdateLocalProxyReactionMontage();
+	void ClearLocalProxyReactionMontage();
 
 	UFUNCTION()
 	void OnOwnerCapsuleBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
@@ -228,4 +230,9 @@ private:
 	bool bRootMotionBlockedByContact = false;
 	bool bLocalRootMotionDisableRequested = false;
 	bool bIgnoreNextReplicatedStopForPredictedStart = false;
+	
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimMontage> LocalProxyReactionMontage = nullptr;
+
+	bool bLocalProxyReactionPlaying = false;
 };

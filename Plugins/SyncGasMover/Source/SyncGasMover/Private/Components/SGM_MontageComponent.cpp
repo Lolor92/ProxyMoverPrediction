@@ -76,8 +76,8 @@ void USGM_MontageComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	DisplayLocalPingDebug();
 	UpdateRootMotionControl(DeltaTime);
+	UpdateLocalProxyReactionMontage();
 }
-
 
 void USGM_MontageComponent::DisplayLocalPingDebug() const
 {
@@ -198,51 +198,56 @@ bool USGM_MontageComponent::StopMontageLocal(UAnimMontage* InMontage)
 	return true;
 }
 
-
-
 bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(UAnimMontage* InMontage, float InPlayRate,
 float InStartTimeSeconds, FName InStartSection)
 {
-AActor* OwnerActor = GetOwner();
-if (!OwnerActor || !InMontage)
-{
-return false;
-}
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !InMontage)
+	{
+		return false;
+	}
 
-const UWorld* World = GetWorld();
-if (!World || World->GetNetMode() != NM_Client)
-{
-UE_LOG(LogTemp, Warning,
-TEXT("SGM_REACTION_PROXY_MONTAGE_SKIP NotClient %s Montage=%s NetMode=%d"),
-*SGMLogActorState(this, OwnerActor),
-*GetNameSafe(InMontage),
-World ? static_cast<int32>(World->GetNetMode()) : -1);
-return false;
-}
+	const UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() != NM_Client)
+	{
+		UE_LOG(LogTemp, Warning,
+		TEXT("SGM_REACTION_PROXY_MONTAGE_SKIP NotClient %s Montage=%s NetMode=%d"),
+		*SGMLogActorState(this, OwnerActor),
+		*GetNameSafe(InMontage),
+		World ? static_cast<int32>(World->GetNetMode()) : -1);
+		return false;
+	}
 
-const APawn* OwnerPawn = Cast<APawn>(OwnerActor);
-if (!OwnerPawn || OwnerPawn->IsLocallyControlled() || OwnerActor->GetLocalRole() != ROLE_SimulatedProxy)
-{
-UE_LOG(LogTemp, Warning,
-TEXT("SGM_REACTION_PROXY_MONTAGE_SKIP NotSimProxy %s Montage=%s"),
-*SGMLogActorState(this, OwnerActor),
-*GetNameSafe(InMontage));
-return false;
-}
+	const APawn* OwnerPawn = Cast<APawn>(OwnerActor);
+	if (!OwnerPawn || OwnerPawn->IsLocallyControlled() || OwnerActor->GetLocalRole() != ROLE_SimulatedProxy)
+	{
+		UE_LOG(LogTemp, Warning,
+		TEXT("SGM_REACTION_PROXY_MONTAGE_SKIP NotSimProxy %s Montage=%s"),
+		*SGMLogActorState(this, OwnerActor),
+		*GetNameSafe(InMontage));
+		return false;
+	}
 
-const bool bPlayed = PlayMontageLocal(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
+	const bool bPlayed = PlayMontageLocal(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
 
-UE_LOG(LogTemp, Warning,
-TEXT("SGM_REACTION_PROXY_MONTAGE_PLAY %s Montage=%s PlayRate=%.3f Start=%.3f Section=%s RootMotion=%d Played=%d"),
-*SGMLogActorState(this, OwnerActor),
-*GetNameSafe(InMontage),
-InPlayRate,
-InStartTimeSeconds,
-*InStartSection.ToString(),
-InMontage->HasRootMotion(),
-bPlayed);
+	if (bPlayed)
+	{
+		LocalProxyReactionMontage = InMontage;
+		bLocalProxyReactionPlaying = true;
+		SetComponentTickEnabled(true);
+	}
 
-return bPlayed;
+	UE_LOG(LogTemp, Warning,
+	TEXT("SGM_REACTION_PROXY_MONTAGE_PLAY %s Montage=%s PlayRate=%.3f Start=%.3f Section=%s RootMotion=%d Played=%d"),
+	*SGMLogActorState(this, OwnerActor),
+	*GetNameSafe(InMontage),
+	InPlayRate,
+	InStartTimeSeconds,
+	*InStartSection.ToString(),
+	InMontage->HasRootMotion(),
+	bPlayed);
+
+	return bPlayed;
 }
 
 
@@ -803,12 +808,16 @@ void USGM_MontageComponent::UpdateRootMotionControl(float DeltaSeconds)
 {
 	if (!RepMontageState.Montage || !RepMontageState.bIsPlaying)
 	{
-		ResetLocalRootMotionControlState();
+		if (!bLocalProxyReactionPlaying)
+		{
+			ResetLocalRootMotionControlState();
 #if !UE_BUILD_SHIPPING
-		SetComponentTickEnabled(true);
+			SetComponentTickEnabled(true);
 #else
-		SetComponentTickEnabled(false);
+			SetComponentTickEnabled(false);
 #endif
+		}
+
 		return;
 	}
 
@@ -834,7 +843,11 @@ void USGM_MontageComponent::UpdateRootMotionControl(float DeltaSeconds)
 			RepMontageState.Serial++;
 		}
 
-		ResetLocalRootMotionControlState();
+		if (!bLocalProxyReactionPlaying)
+		{
+			ResetLocalRootMotionControlState();
+		}
+
 		SetCanBlendUpperAndLowerBody(false);
 #if !UE_BUILD_SHIPPING
 		SetComponentTickEnabled(true);
@@ -1152,4 +1165,38 @@ void USGM_MontageComponent::ResetLocalRootMotionControlState()
 	RootMotionReleasePercent = -1.0f;
 	bLocalRootMotionDisableRequested = false;
 	bIgnoreNextReplicatedStopForPredictedStart = false;
+}
+
+void USGM_MontageComponent::UpdateLocalProxyReactionMontage()
+{
+	if (!bLocalProxyReactionPlaying)
+	{
+		return;
+	}
+
+	ResolveMeshComponent();
+
+	UAnimInstance* AnimInstance = MontageMeshComponent ? MontageMeshComponent->GetAnimInstance() : nullptr;
+	if (!AnimInstance || !LocalProxyReactionMontage || !AnimInstance->Montage_IsPlaying(LocalProxyReactionMontage))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("SGM_REACTION_PROXY_MONTAGE_ENDED %s Montage=%s"),
+			*SGMLogActorState(this, GetOwner()),
+			*GetNameSafe(LocalProxyReactionMontage));
+
+		ClearLocalProxyReactionMontage();
+		return;
+	}
+}
+
+void USGM_MontageComponent::ClearLocalProxyReactionMontage()
+{
+	LocalProxyReactionMontage = nullptr;
+	bLocalProxyReactionPlaying = false;
+
+#if !UE_BUILD_SHIPPING
+	SetComponentTickEnabled(true);
+#else
+	SetComponentTickEnabled(RepMontageState.bIsPlaying);
+#endif
 }
