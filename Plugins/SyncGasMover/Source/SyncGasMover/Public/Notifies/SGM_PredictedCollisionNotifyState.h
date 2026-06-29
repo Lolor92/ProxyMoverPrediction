@@ -129,6 +129,4 @@ private:
 	TMap<TWeakObjectPtr<USkeletalMeshComponent>, FTransform> PreviousTransforms;
 	TMap<TWeakObjectPtr<USkeletalMeshComponent>, FSGM_PredictedCollisionRuntimeWindow> ActiveWindowsByMesh;
 
-	static TMap<TWeakObjectPtr<const USkeletalMeshComponent>, int32> CurrentAttackInstanceKeysByMesh;
-	static TMap<TWeakObjectPtr<const USkeletalMeshComponent>, int32> NextAttackInstanceKeysByMesh;
 };

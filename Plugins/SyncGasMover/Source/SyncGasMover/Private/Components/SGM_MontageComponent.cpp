@@ -117,6 +117,12 @@ void USGM_MontageComponent::DisplayLocalPingDebug() const
 #endif
 }
 
+int32 USGM_MontageComponent::AllocateNextAttackInstanceKey()
+{
+	NextAttackInstanceKey = NextAttackInstanceKey >= 999999 ? 1 : NextAttackInstanceKey + 1;
+	return NextAttackInstanceKey;
+}
+
 bool USGM_MontageComponent::PlayMontageLocal(UAnimMontage* InMontage, float InPlayRate, float InStartTimeSeconds,
 	FName InStartSection)
 {
@@ -270,6 +276,9 @@ bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMonta
 		}
 	}
 
+	const int32 AttackInstanceKey = AllocateNextAttackInstanceKey();
+	RepMontageState.AttackInstanceKey = AttackInstanceKey;
+
 	const bool bPlayedLocally = PlayMontageLocal(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
 	if (!bPlayedLocally)
 	{
@@ -285,6 +294,7 @@ bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMonta
 	RepMontageState.bIsPlaying = true;
 	RepMontageState.bRootMotionDisabled = false;
 	RepMontageState.RootMotionScale = 1.0f;
+	RepMontageState.AttackInstanceKey = AttackInstanceKey;
 	ResetLocalRootMotionControlState();
 
 	// ResetLocalRootMotionControlState clears prediction latches, so set this after reset.
@@ -296,7 +306,7 @@ bool USGM_MontageComponent::PlayPredictedReplicatedMontage(UAnimMontage* InMonta
 	BindContactBlockingEvents();
 	RefreshInitialContactBlockState();
 
-	ServerPlayReplicatedMontage(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
+	ServerPlayReplicatedMontage(InMontage, InPlayRate, InStartTimeSeconds, InStartSection, AttackInstanceKey);
 	return true;
 }
 
@@ -471,7 +481,7 @@ bool USGM_MontageComponent::DisableRootMotionForReplicatedMontage()
 }
 
 bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, float InPlayRate,
-	float InStartTimeSeconds, FName InStartSection)
+	float InStartTimeSeconds, FName InStartSection, int32 InAttackInstanceKey)
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return false;
 	if (!InMontage) return false;
@@ -502,6 +512,11 @@ bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, floa
 		}
 	}
 
+	const int32 AttackInstanceKey = InAttackInstanceKey > 0
+		? FMath::Clamp(InAttackInstanceKey, 1, 999999)
+		: AllocateNextAttackInstanceKey();
+	RepMontageState.AttackInstanceKey = AttackInstanceKey;
+
 	const bool bPlayedLocally = PlayMontageLocal(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
 	if (!bPlayedLocally) return false;
 
@@ -512,6 +527,7 @@ bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, floa
 	RepMontageState.bIsPlaying = true;
 	RepMontageState.bRootMotionDisabled = false;
 	RepMontageState.RootMotionScale = 1.0f;
+	RepMontageState.AttackInstanceKey = AttackInstanceKey;
 
 	ResetLocalRootMotionControlState();
 	SetCanBlendUpperAndLowerBody(false);
@@ -528,7 +544,7 @@ bool USGM_MontageComponent::StartReplicatedMontage(UAnimMontage* InMontage, floa
 }
 
 void USGM_MontageComponent::ServerPlayReplicatedMontage_Implementation(UAnimMontage* InMontage, float InPlayRate,
-	float InStartTimeSeconds, FName InStartSection)
+	float InStartTimeSeconds, FName InStartSection, int32 InAttackInstanceKey)
 {
 	UE_LOG(LogTemp, Warning, TEXT("SGM_DEBUG ServerPlayReplicatedMontage ENTER %s Montage=%s Start=%.3f PlayRate=%.3f CurrentSerial=%d IsPlaying=%d CurrentMontage=%s"),
 		*SGMLogActorState(this, GetOwner()), *GetNameSafe(InMontage), InStartTimeSeconds, InPlayRate,
@@ -567,7 +583,7 @@ void USGM_MontageComponent::ServerPlayReplicatedMontage_Implementation(UAnimMont
 		}
 	}
 
-	StartReplicatedMontage(InMontage, InPlayRate, InStartTimeSeconds, InStartSection);
+	StartReplicatedMontage(InMontage, InPlayRate, InStartTimeSeconds, InStartSection, InAttackInstanceKey);
 }
 
 void USGM_MontageComponent::ServerDisableRootMotionForReplicatedMontage_Implementation()

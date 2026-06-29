@@ -1,13 +1,12 @@
 #include "Notifies/SGM_PredictedCollisionNotifyState.h"
 #include "Components/SGM_ProxyPredictionComponent.h"
+#include "Components/SGM_MontageComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimSequenceBase.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 
-TMap<TWeakObjectPtr<const USkeletalMeshComponent>, int32> USGM_PredictedCollisionNotifyState::CurrentAttackInstanceKeysByMesh;
-TMap<TWeakObjectPtr<const USkeletalMeshComponent>, int32> USGM_PredictedCollisionNotifyState::NextAttackInstanceKeysByMesh;
 
 void USGM_PredictedCollisionNotifyState::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
 	float TotalDuration, const FAnimNotifyEventReference& EventReference)
@@ -127,31 +126,20 @@ FName USGM_PredictedCollisionNotifyState::ResolveNotifyWindowId(const UAnimSeque
 int32 USGM_PredictedCollisionNotifyState::ResolveAttackInstanceKey(const USkeletalMeshComponent* MeshComp,
 	FName ResolvedNotifyWindowId) const
 {
-	if (!MeshComp)
-	{
-		return 0;
-	}
+	const AActor* OwnerActor = MeshComp ? MeshComp->GetOwner() : nullptr;
+	const USGM_MontageComponent* MontageComponent = OwnerActor
+		? OwnerActor->FindComponentByClass<USGM_MontageComponent>()
+		: nullptr;
 
-	const TWeakObjectPtr<const USkeletalMeshComponent> MeshKey(MeshComp);
-	const bool bStartsNewAttackInstance = ResolvedNotifyWindowId == FName(TEXT("Auto_000"))
-		|| !CurrentAttackInstanceKeysByMesh.Contains(MeshKey);
-
-	if (bStartsNewAttackInstance)
-	{
-		int32& NextKey = NextAttackInstanceKeysByMesh.FindOrAdd(MeshKey);
-		NextKey = (NextKey + 1) % 10000;
-		CurrentAttackInstanceKeysByMesh.FindOrAdd(MeshKey) = NextKey;
-	}
-
-	const int32* CurrentKey = CurrentAttackInstanceKeysByMesh.Find(MeshKey);
-	return CurrentKey ? FMath::Clamp(*CurrentKey, 0, 9999) : 0;
+	const int32 AttackInstanceKey = MontageComponent ? MontageComponent->GetCurrentAttackInstanceKey() : 0;
+	return FMath::Clamp(AttackInstanceKey, 0, 999999);
 }
 
 FName USGM_PredictedCollisionNotifyState::BuildFullCollisionWindowKey(const USkeletalMeshComponent* MeshComp,
 	FName ResolvedNotifyWindowId) const
 {
 	const int32 AttackInstanceKey = ResolveAttackInstanceKey(MeshComp, ResolvedNotifyWindowId);
-	return FName(*FString::Printf(TEXT("A%04d_%s"), AttackInstanceKey, *ResolvedNotifyWindowId.ToString()));
+	return FName(*FString::Printf(TEXT("A%06d_%s"), AttackInstanceKey, *ResolvedNotifyWindowId.ToString()));
 }
 
 void USGM_PredictedCollisionNotifyState::HandlePredictedCollisionHit(AActor* OwningActor, AActor* HitActor,
