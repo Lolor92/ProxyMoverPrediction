@@ -89,7 +89,6 @@ bool USGM_ProxyPredictionComponent::PlayPredictedReactionOnTargetProxy(AActor* I
 	}
 
 		const bool bPlayed = MontageComponent->PlayPredictedProxyReactionMontage(
-			GetOwner(),
 			Reaction.Montage,
 			Reaction.PlayRate,
 			0.0f,

@@ -72,8 +72,8 @@ public:
 
 
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Montage")
-	bool PlayPredictedProxyReactionMontage(AActor* ReactionSourceActor, UAnimMontage* InMontage, float InPlayRate = 1.0f,
-	float InStartTimeSeconds = 0.0f, FName InStartSection = NAME_None);
+	bool PlayPredictedProxyReactionMontage(UAnimMontage* InMontage, float InPlayRate = 1.0f,
+		float InStartTimeSeconds = 0.0f, FName InStartSection = NAME_None);
 
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Montage")
 	bool PlayPredictedReplicatedMontage(UAnimMontage* InMontage, float InPlayRate = 1.0f,
@@ -234,10 +234,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimMontage> LocalProxyReactionMontage = nullptr;
 
-	TWeakObjectPtr<AActor> LocalProxyReactionSourceActor;
 	FTransform LocalProxyReactionOriginalMeshRelativeTransform = FTransform::Identity;
 	float LocalProxyReactionStartPosition = 0.0f;
-	float LocalProxyReactionPreviousPosition = 0.0f;
-	float LocalProxyReactionPlayRate = 1.0f;
 	bool bLocalProxyReactionPlaying = false;
 };

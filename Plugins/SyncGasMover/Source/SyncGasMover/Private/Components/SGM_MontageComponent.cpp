@@ -204,7 +204,7 @@ bool USGM_MontageComponent::StopMontageLocal(UAnimMontage* InMontage)
 	return true;
 }
 
-bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(AActor* ReactionSourceActor, UAnimMontage* InMontage, float InPlayRate,
+bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(UAnimMontage* InMontage, float InPlayRate,
 	float InStartTimeSeconds, FName InStartSection)
 {
 	AActor* OwnerActor = GetOwner();
@@ -280,18 +280,14 @@ bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(AActor* ReactionSo
 	{
 		MontageInstance->PushDisableRootMotion();
 		LocalProxyReactionStartPosition = MontageInstance->GetPosition();
-		LocalProxyReactionPreviousPosition = LocalProxyReactionStartPosition;
 	}
 	else
 	{
 		LocalProxyReactionStartPosition = ClampedStartTime;
-		LocalProxyReactionPreviousPosition = ClampedStartTime;
 	}
 
-	LocalProxyReactionSourceActor = ReactionSourceActor;
 	LocalProxyReactionOriginalMeshRelativeTransform = MontageMeshComponent->GetRelativeTransform();
 	LocalProxyReactionMontage = InMontage;
-	LocalProxyReactionPlayRate = InPlayRate;
 	bLocalProxyReactionPlaying = true;
 
 	SetComponentTickEnabled(true);
@@ -1257,7 +1253,6 @@ void USGM_MontageComponent::UpdateLocalProxyReactionMontage()
 	}
 
 	const float CurrentPosition = MontageInstance->GetPosition();
-	const float PreviousPosition = LocalProxyReactionPreviousPosition;
 
 	if (CurrentPosition >= LocalProxyReactionStartPosition && LocalProxyReactionMontage->HasRootMotion())
 	{
@@ -1302,7 +1297,6 @@ void USGM_MontageComponent::UpdateLocalProxyReactionMontage()
 			*CumulativeRelativeOffset.ToString());
 	}
 
-	LocalProxyReactionPreviousPosition = CurrentPosition;
 }
 
 void USGM_MontageComponent::ClearLocalProxyReactionMontage()
@@ -1313,12 +1307,9 @@ void USGM_MontageComponent::ClearLocalProxyReactionMontage()
 	}
 
 	LocalProxyReactionMontage = nullptr;
-	LocalProxyReactionSourceActor.Reset();
 	bLocalProxyReactionPlaying = false;
 	LocalProxyReactionOriginalMeshRelativeTransform = FTransform::Identity;
 	LocalProxyReactionStartPosition = 0.0f;
-	LocalProxyReactionPreviousPosition = 0.0f;
-	LocalProxyReactionPlayRate = 1.0f;
 
 #if !UE_BUILD_SHIPPING
 	SetComponentTickEnabled(true);
