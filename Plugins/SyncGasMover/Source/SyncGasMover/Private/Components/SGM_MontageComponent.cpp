@@ -246,6 +246,18 @@ bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(UAnimMontage* InMo
 		return false;
 	}
 
+	// If the server replicated this same reaction montage to the simulated proxy first,
+	// do not start the extra local mesh-offset prediction path on top of it.
+	if (AnimInstance->Montage_IsPlaying(InMontage))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("SGM_REACTION_PROXY_MONTAGE_SKIP AlreadyPlaying %s Montage=%s Pos=%.3f"),
+			*SGMLogActorState(this, OwnerActor),
+			*GetNameSafe(InMontage),
+			AnimInstance->Montage_GetPosition(InMontage));
+		return true;
+	}
+
 	const float MontageLength = InMontage->GetPlayLength();
 	const float ClampedStartTime = FMath::Clamp(
 		InStartTimeSeconds,
