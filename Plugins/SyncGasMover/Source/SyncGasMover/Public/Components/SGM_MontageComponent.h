@@ -234,6 +234,8 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimMontage> LocalProxyReactionMontage = nullptr;
 
+	FTransform LocalProxyReactionOriginalMeshRelativeTransform = FTransform::Identity;
+	float LocalProxyReactionStartPosition = 0.0f;
 	float LocalProxyReactionPreviousPosition = 0.0f;
 	float LocalProxyReactionPlayRate = 1.0f;
 	bool bLocalProxyReactionPlaying = false;

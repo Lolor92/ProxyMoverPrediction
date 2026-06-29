@@ -279,10 +279,12 @@ bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(UAnimMontage* InMo
 	if (FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(InMontage))
 	{
 		MontageInstance->PushDisableRootMotion();
-		LocalProxyReactionPreviousPosition = MontageInstance->GetPosition();
+		LocalProxyReactionStartPosition = MontageInstance->GetPosition();
+		LocalProxyReactionPreviousPosition = LocalProxyReactionStartPosition;
 	}
 	else
 	{
+		LocalProxyReactionStartPosition = ClampedStartTime;
 		LocalProxyReactionPreviousPosition = ClampedStartTime;
 	}
 
@@ -1256,33 +1258,30 @@ void USGM_MontageComponent::UpdateLocalProxyReactionMontage()
 	const float CurrentPosition = MontageInstance->GetPosition();
 	const float PreviousPosition = LocalProxyReactionPreviousPosition;
 
-	if (CurrentPosition > PreviousPosition && LocalProxyReactionMontage->HasRootMotion())
+	if (CurrentPosition >= LocalProxyReactionStartPosition && LocalProxyReactionMontage->HasRootMotion())
 	{
-		const FTransform LocalRootMotion = UMotionWarpingUtilities::ExtractRootMotionFromAnimation(
+		const FTransform CumulativeRootMotion = UMotionWarpingUtilities::ExtractRootMotionFromAnimation(
 			LocalProxyReactionMontage,
-			PreviousPosition,
+			LocalProxyReactionStartPosition,
 			CurrentPosition);
 
-		const FTransform ActorTransform = OwnerActor->GetActorTransform();
-		const FTransform WorldRootMotion = LocalRootMotion * ActorTransform;
+		FTransform NewMeshRelativeTransform = LocalProxyReactionOriginalMeshRelativeTransform;
 
-		const FVector DeltaLocation = WorldRootMotion.GetLocation() - ActorTransform.GetLocation();
-		const FQuat DeltaRotation = WorldRootMotion.GetRotation() * ActorTransform.GetRotation().Inverse();
+		const FVector CumulativeLocalOffset = CumulativeRootMotion.GetTranslation();
+		NewMeshRelativeTransform.SetLocation(
+			LocalProxyReactionOriginalMeshRelativeTransform.GetLocation() + CumulativeLocalOffset);
 
-		if (!DeltaLocation.IsNearlyZero() || !DeltaRotation.IsIdentity())
-		{
-			MontageMeshComponent->AddWorldOffset(DeltaLocation, false);
-			MontageMeshComponent->AddWorldRotation(DeltaRotation, false);
+		MontageMeshComponent->SetRelativeTransform(NewMeshRelativeTransform);
 
-			UE_LOG(LogTemp, Warning,
-				TEXT("SGM_REACTION_PROXY_ROOTMOTION_STEP %s MeshLoc=%s Montage=%s %.3f->%.3f Delta=%s"),
-				*SGMLogActorState(this, OwnerActor),
-				*MontageMeshComponent->GetComponentLocation().ToString(),
-				*GetNameSafe(LocalProxyReactionMontage),
-				PreviousPosition,
-				CurrentPosition,
-				*DeltaLocation.ToString());
-		}
+		UE_LOG(LogTemp, Warning,
+			TEXT("SGM_REACTION_PROXY_ROOTMOTION_SET %s MeshRel=%s MeshWorld=%s Montage=%s %.3f->%.3f Cumulative=%s"),
+			*SGMLogActorState(this, OwnerActor),
+			*MontageMeshComponent->GetRelativeLocation().ToString(),
+			*MontageMeshComponent->GetComponentLocation().ToString(),
+			*GetNameSafe(LocalProxyReactionMontage),
+			LocalProxyReactionStartPosition,
+			CurrentPosition,
+			*CumulativeLocalOffset.ToString());
 	}
 
 	LocalProxyReactionPreviousPosition = CurrentPosition;
@@ -1298,6 +1297,7 @@ void USGM_MontageComponent::ClearLocalProxyReactionMontage()
 	LocalProxyReactionMontage = nullptr;
 	bLocalProxyReactionPlaying = false;
 	LocalProxyReactionOriginalMeshRelativeTransform = FTransform::Identity;
+	LocalProxyReactionStartPosition = 0.0f;
 	LocalProxyReactionPreviousPosition = 0.0f;
 	LocalProxyReactionPlayRate = 1.0f;
 
