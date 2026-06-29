@@ -110,6 +110,7 @@ protected:
 
 private:
 	bool ShouldRunCollision(const AActor* OwnerActor) const;
+	FName ResolveNotifyWindowId(const UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) const;
 	bool BuildTraceTransform(const USkeletalMeshComponent* MeshComp, FTransform& OutTransform) const;
 	FCollisionShape MakeCollisionShape() const;
 
