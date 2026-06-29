@@ -26,5 +26,4 @@ public:
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SyncGasMover|Reaction")
 	TObjectPtr<USGM_ReactionData> ReactionData = nullptr;
-	
 };
