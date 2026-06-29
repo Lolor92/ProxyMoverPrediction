@@ -48,6 +48,7 @@ USGM_MontageComponent::USGM_MontageComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
+	PrimaryComponentTick.TickGroup = TG_PostUpdateWork;
 	SetIsReplicatedByDefault(true);
 }
 
@@ -62,6 +63,11 @@ void USGM_MontageComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	ResolveMeshComponent();
+
+	if (MontageMeshComponent)
+	{
+		AddTickPrerequisiteComponent(MontageMeshComponent);
+	}
 
 #if !UE_BUILD_SHIPPING
 	// Keep ticking in development/test builds so the lightweight ping readout stays visible
@@ -280,6 +286,7 @@ bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(UAnimMontage* InMo
 		LocalProxyReactionPreviousPosition = ClampedStartTime;
 	}
 
+	LocalProxyReactionOriginalMeshRelativeTransform = MontageMeshComponent->GetRelativeTransform();
 	LocalProxyReactionMontage = InMontage;
 	LocalProxyReactionPlayRate = InPlayRate;
 	bLocalProxyReactionPlaying = true;
@@ -1264,12 +1271,13 @@ void USGM_MontageComponent::UpdateLocalProxyReactionMontage()
 
 		if (!DeltaLocation.IsNearlyZero() || !DeltaRotation.IsIdentity())
 		{
-			OwnerActor->AddActorWorldOffset(DeltaLocation, true);
-			OwnerActor->AddActorWorldRotation(DeltaRotation, false);
+			MontageMeshComponent->AddWorldOffset(DeltaLocation, false);
+			MontageMeshComponent->AddWorldRotation(DeltaRotation, false);
 
 			UE_LOG(LogTemp, Warning,
-				TEXT("SGM_REACTION_PROXY_ROOTMOTION_STEP %s Montage=%s %.3f->%.3f Delta=%s"),
+				TEXT("SGM_REACTION_PROXY_ROOTMOTION_STEP %s MeshLoc=%s Montage=%s %.3f->%.3f Delta=%s"),
 				*SGMLogActorState(this, OwnerActor),
+				*MontageMeshComponent->GetComponentLocation().ToString(),
 				*GetNameSafe(LocalProxyReactionMontage),
 				PreviousPosition,
 				CurrentPosition,
@@ -1282,8 +1290,14 @@ void USGM_MontageComponent::UpdateLocalProxyReactionMontage()
 
 void USGM_MontageComponent::ClearLocalProxyReactionMontage()
 {
+	if (MontageMeshComponent)
+	{
+		MontageMeshComponent->SetRelativeTransform(LocalProxyReactionOriginalMeshRelativeTransform);
+	}
+
 	LocalProxyReactionMontage = nullptr;
 	bLocalProxyReactionPlaying = false;
+	LocalProxyReactionOriginalMeshRelativeTransform = FTransform::Identity;
 	LocalProxyReactionPreviousPosition = 0.0f;
 	LocalProxyReactionPlayRate = 1.0f;
 
