@@ -10,11 +10,11 @@ void USGM_PredictedCollisionNotifyState::NotifyBegin(USkeletalMeshComponent* Mes
 	float TotalDuration, const FAnimNotifyEventReference& EventReference)
 {
 	Super::NotifyBegin(MeshComp, Animation, TotalDuration, EventReference);
-
-	if (!MeshComp) return;
 	
 	UE_LOG(LogTemp, Warning, TEXT("TEST!!!"));
 
+	if (!MeshComp) return;
+	
 	// A new notify window means a new swing/hit window, so clear the per-target hit list.
 	FSGM_PredictedCollisionRuntimeWindow& Window = ActiveWindowsByMesh.FindOrAdd(MeshComp);
 	Window.ProcessedTargets.Reset();
