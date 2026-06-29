@@ -1,11 +1,4 @@
 #include "Components/SGM_ProxyPredictionComponent.h"
-#include "Animation/AnimInstance.h"
-#include "Animation/AnimMontage.h"
-#include "Components/SGM_MontageComponent.h"
-#include "Components/SkeletalMeshComponent.h"
-#include "GameFramework/Pawn.h"
-#include "MotionWarpingComponent.h"
-
 
 USGM_ProxyPredictionComponent::USGM_ProxyPredictionComponent()
 {
@@ -20,18 +13,17 @@ void USGM_ProxyPredictionComponent::TickComponent(float DeltaTime, ELevelTick Ti
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 }
 
-bool USGM_ProxyPredictionComponent::PlayPredictedReactionOnTargetProxy(AActor* TargetActor, FGameplayTag ReactionTag, int32 PredictionKey)
+bool USGM_ProxyPredictionComponent::PlayPredictedReactionOnTargetProxy(AActor* InActor, FGameplayTag ReactionTag, FName NotifyWindowId)
 {
 	UE_LOG(LogTemp, Warning,
-		TEXT("SGM_REACTION_KEY LOOKUP Owner=%s Target=%s Tag=%s NetMode=%d Auth=%d Key=%d"),
+		TEXT("SGM_REACTION_WINDOW LOOKUP Owner=%s Tag=%s NetMode=%d Auth=%d NotifyWindowId=%s"),
 		*GetNameSafe(GetOwner()),
-		*GetNameSafe(TargetActor),
 		*ReactionTag.ToString(),
 		GetWorld() ? static_cast<int32>(GetWorld()->GetNetMode()) : -1,
 		GetOwner() ? GetOwner()->HasAuthority() : false,
-		PredictionKey);
+		*NotifyWindowId.ToString());
 
-	if (!ReactionData || !ReactionTag.IsValid()) return false;
+	if (!InActor || !ReactionData || !ReactionTag.IsValid()) return false;
 
 	FSGM_ReactionDataEntry Reaction;
 	if (!ReactionData->FindReaction(ReactionTag, Reaction)) return false;
