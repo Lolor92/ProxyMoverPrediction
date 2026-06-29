@@ -83,6 +83,64 @@ void USGM_MontageComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	DisplayLocalPingDebug();
 	UpdateRootMotionControl(DeltaTime);
 	UpdateLocalProxyReactionMontage();
+	DebugTrackSimProxyCorrection(DeltaTime);
+}
+
+void USGM_MontageComponent::DebugTrackSimProxyCorrection(float DeltaSeconds)
+{
+#if !UE_BUILD_SHIPPING
+	AActor* OwnerActor = GetOwner();
+	const UWorld* World = GetWorld();
+
+	if (!OwnerActor || !World || World->GetNetMode() != NM_Client || OwnerActor->GetLocalRole() != ROLE_SimulatedProxy)
+	{
+		bDebugHasLastSimProxyActorLocation = false;
+		return;
+	}
+
+	const FVector CurrentLocation = OwnerActor->GetActorLocation();
+
+	if (!bDebugHasLastSimProxyActorLocation)
+	{
+		DebugLastSimProxyActorLocation = CurrentLocation;
+		bDebugHasLastSimProxyActorLocation = true;
+		return;
+	}
+
+	const FVector Delta = CurrentLocation - DebugLastSimProxyActorLocation;
+	const float DeltaSize = Delta.Size2D();
+
+	// Small threshold so normal root-motion ticks don't flood, but correction snaps/tugs show up.
+	if (DeltaSize > 10.0f)
+	{
+		ResolveMeshComponent();
+
+		UAnimInstance* AnimInstance = MontageMeshComponent ? MontageMeshComponent->GetAnimInstance() : nullptr;
+		const bool bRepMontagePlaying = AnimInstance && RepMontageState.Montage
+			? AnimInstance->Montage_IsPlaying(RepMontageState.Montage)
+			: false;
+		const bool bLocalReactionMontagePlaying = AnimInstance && LocalProxyReactionMontage
+			? AnimInstance->Montage_IsPlaying(LocalProxyReactionMontage)
+			: false;
+
+		UE_LOG(LogTemp, Warning,
+			TEXT("SGM_PROXY_CORRECTION_TRACE %s Delta=%s Delta2D=%.3f Dt=%.3f RepMontage=%s RepPlaying=%d RepIsPlaying=%d LocalReaction=%s LocalReactionActive=%d LocalReactionPlaying=%d MeshRel=%s MeshWorld=%s"),
+			*SGMLogActorState(this, OwnerActor),
+			*Delta.ToString(),
+			DeltaSize,
+			DeltaSeconds,
+			*GetNameSafe(RepMontageState.Montage),
+			RepMontageState.bIsPlaying,
+			bRepMontagePlaying,
+			*GetNameSafe(LocalProxyReactionMontage),
+			bLocalProxyReactionPlaying,
+			bLocalReactionMontagePlaying,
+			MontageMeshComponent ? *MontageMeshComponent->GetRelativeLocation().ToString() : TEXT("None"),
+			MontageMeshComponent ? *MontageMeshComponent->GetComponentLocation().ToString() : TEXT("None"));
+	}
+
+	DebugLastSimProxyActorLocation = CurrentLocation;
+#endif
 }
 
 void USGM_MontageComponent::DisplayLocalPingDebug() const

@@ -202,6 +202,7 @@ private:
 	void ResetLocalRootMotionControlState();
 	void UpdateLocalProxyReactionMontage();
 	void ClearLocalProxyReactionMontage();
+	void DebugTrackSimProxyCorrection(float DeltaSeconds);
 
 	UFUNCTION()
 	void OnOwnerCapsuleBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
@@ -237,4 +238,7 @@ private:
 	FTransform LocalProxyReactionOriginalMeshRelativeTransform = FTransform::Identity;
 	float LocalProxyReactionStartPosition = 0.0f;
 	bool bLocalProxyReactionPlaying = false;
+
+	FVector DebugLastSimProxyActorLocation = FVector::ZeroVector;
+	bool bDebugHasLastSimProxyActorLocation = false;
 };
