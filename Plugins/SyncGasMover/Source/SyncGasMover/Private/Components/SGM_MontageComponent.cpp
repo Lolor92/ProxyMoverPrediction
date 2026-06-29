@@ -230,7 +230,26 @@ bool USGM_MontageComponent::PlayMontageLocal(UAnimMontage* InMontage, float InPl
 		if (FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(InMontage))
 		{
 			MontageInstance->PushDisableRootMotion();
-			QueueRootMotionMove(InMontage, InPlayRate, MontageInstance->GetPosition());
+
+			const AActor* OwnerActor = GetOwner();
+			const UWorld* World = GetWorld();
+			const bool bIsClientSimulatedProxy = World
+				&& World->GetNetMode() == NM_Client
+				&& OwnerActor
+				&& OwnerActor->GetLocalRole() == ROLE_SimulatedProxy;
+
+			if (bIsClientSimulatedProxy)
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("SGM_DEBUG PlayMontageLocal SIM_PROXY_SKIP_LOCAL_RM %s Montage=%s Pos=%.3f"),
+					*SGMLogActorState(this, OwnerActor),
+					*GetNameSafe(InMontage),
+					MontageInstance->GetPosition());
+			}
+			else
+			{
+				QueueRootMotionMove(InMontage, InPlayRate, MontageInstance->GetPosition());
+			}
 		}
 	}
 
