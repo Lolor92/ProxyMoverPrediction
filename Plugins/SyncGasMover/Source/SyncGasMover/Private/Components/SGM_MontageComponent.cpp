@@ -857,9 +857,16 @@ void USGM_MontageComponent::OnRep_RepMontageState()
 				{
 					bLocalProxyReactionClearPendingServerStop = true;
 
-					UE_LOG(LogTemp, Warning, TEXT("SGM_REACTION_PROXY_ROOTMOTION_HOLD_UNTIL_SERVER_STOP %s Montage=%s"),
+					// The server confirmed the reaction. Keep the current predicted visual offset,
+					// but stop advancing the local mesh-root-motion extractor. Otherwise the server
+					// actor movement and local mesh offset both keep moving, which looks like a second pushback.
+					bLocalProxyReactionPlaying = false;
+
+					UE_LOG(LogTemp, Warning, TEXT("SGM_REACTION_PROXY_ROOTMOTION_FREEZE_UNTIL_SERVER_STOP %s Montage=%s MeshRel=%s MeshWorld=%s"),
 						*SGMLogActorState(this, OwnerActor),
-						*GetNameSafe(RepMontageState.Montage));
+						*GetNameSafe(RepMontageState.Montage),
+						MontageMeshComponent ? *MontageMeshComponent->GetRelativeLocation().ToString() : TEXT("None"),
+						MontageMeshComponent ? *MontageMeshComponent->GetComponentLocation().ToString() : TEXT("None"));
 				}
 			}
 
