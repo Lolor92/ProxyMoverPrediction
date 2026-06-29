@@ -293,6 +293,15 @@ bool USGM_MontageComponent::PlayPredictedProxyReactionMontage(UAnimMontage* InMo
 		return false;
 	}
 
+	// Temporary sanity path: do not play a predicted proxy reaction locally.
+	// The server authoritative replicated montage will still arrive and play once.
+	// This removes the mesh-offset prediction layer that currently looks like a second pushback at high ping.
+	UE_LOG(LogTemp, Warning,
+		TEXT("SGM_REACTION_PROXY_MONTAGE_SKIP PredictionDisabled_ServerOnly %s Montage=%s"),
+		*SGMLogActorState(this, OwnerActor),
+		*GetNameSafe(InMontage));
+	return true;
+
 	ResolveMeshComponent();
 	if (!MontageMeshComponent)
 	{
