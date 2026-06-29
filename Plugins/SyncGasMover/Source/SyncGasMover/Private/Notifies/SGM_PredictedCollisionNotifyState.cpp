@@ -1,7 +1,6 @@
 #include "Notifies/SGM_PredictedCollisionNotifyState.h"
 #include "Components/SGM_ProxyPredictionComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Animation/AnimSequenceBase.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -33,7 +32,7 @@ void USGM_PredictedCollisionNotifyState::NotifyBegin(USkeletalMeshComponent* Mes
 
 	if (!bShouldRunCollision) return;
 	
-	Window.NotifyWindowId = ResolveNotifyWindowId(Animation, EventReference);
+	Window.NotifyWindowId = NotifyWindowId;
 
 	UE_LOG(LogTemp, Warning,
 		TEXT("SGM_COLLISION_WINDOW BEGIN Owner=%s NetMode=%d Auth=%d NotifyWindowId=%s"),
