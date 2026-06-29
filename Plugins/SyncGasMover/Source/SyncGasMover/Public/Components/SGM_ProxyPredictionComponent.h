@@ -9,27 +9,6 @@ class AActor;
 class UAnimMontage;
 class USkeletalMeshComponent;
 
-USTRUCT()
-struct FSGM_ActivePredictedProxyRootMotion
-{
-	GENERATED_BODY()
-
-	UPROPERTY(Transient)
-	TWeakObjectPtr<AActor> TargetActor;
-
-	UPROPERTY(Transient)
-	TWeakObjectPtr<USkeletalMeshComponent> TargetMesh;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UAnimMontage> Montage = nullptr;
-
-	float PlayRate = 1.0f;
-	float PreviousPosition = 0.0f;
-	FTransform InitialMeshRelativeTransform = FTransform::Identity;
-	FTransform InitialMeshWorldTransform = FTransform::Identity;
-	FVector AccumulatedWorldTranslation = FVector::ZeroVector;
-};
-
 UCLASS(ClassGroup = (SyncGasMover), meta = (BlueprintSpawnableComponent))
 class SYNCGASMOVER_API USGM_ProxyPredictionComponent : public UActorComponent
 {
@@ -43,31 +22,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Reaction")
 	bool PlayPredictedReactionOnTargetProxy(AActor* TargetActor, FGameplayTag ReactionTag);
-
-	// Server-authoritative path. Plays the same reaction montage on the target's SGM_MontageComponent
-	// so the target capsule/root motion follows the same animation that the proxy predicted visually.
-	UFUNCTION(BlueprintCallable, Category = "SyncGasMover|Reaction")
-	bool TriggerReactionMontageOnTarget(AActor* TargetActor, FGameplayTag ReactionTag);
-
-	UFUNCTION(Server, Reliable)
-	void ServerTriggerReactionMontageOnTarget(AActor* TargetActor, FGameplayTag ReactionTag);
-
+	
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SyncGasMover|Reaction")
 	TObjectPtr<USGM_ReactionData> ReactionData = nullptr;
-
-private:
-	bool CanPlayPredictedReactionOnTargetProxy(AActor* TargetActor, const FSGM_ReactionDataEntry& Reaction) const;
-	bool PlayReactionMontageOnActor(AActor* TargetActor, const FSGM_ReactionDataEntry& Reaction);
-	bool PlayReactionMontageOnTargetServer(AActor* TargetActor, FGameplayTag ReactionTag, const FSGM_ReactionDataEntry& Reaction) const;
-	float GetReactionStartPosition(const FSGM_ReactionDataEntry& Reaction) const;
-	void StartPredictedProxyRootMotion(AActor* TargetActor, const FSGM_ReactionDataEntry& Reaction,
-		float StartPosition);
-	void UpdatePredictedProxyRootMotion();
-
-	UPROPERTY(Transient)
-	mutable TMap<TWeakObjectPtr<AActor>, double> LastReactionTimeByTarget;
-
-	UPROPERTY(Transient)
-	TArray<FSGM_ActivePredictedProxyRootMotion> ActivePredictedProxyRootMotion;
+	
 };
